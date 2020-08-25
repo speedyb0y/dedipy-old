@@ -1,5 +1,8 @@
 #!/usr/bin/python
 
+### O HUGEPAGE é PROCESSES[(offset, size),] |PROCESS0|PROCESS2|
+####  TODO: FIXME: ja executar ele rodando como root, scheduling e cpu
+
 HEADS_N = 128
 
 N_START = 5
