@@ -38,18 +38,18 @@ typedef uint64_t u64;
 #define CHUNK_SIZE_USED(size) ((size) | 1ULL)
 
 // LE O SIZE COM A FLAG DE FREE
-#define CHUNK_SIZE(chunk)        (*(   u64*)        (chunk)      )
-#define CHUNK_PTR(chunk)         (*(void***)((void*)(chunk) +  8))
-#define CHUNK_NEXT(chunk)        (*( void**)((void*)(chunk) + 16))
-#define CHUNK_SIZE2(chunk, size) (*(   u64*)((void*)(chunk) + (size) - 8))
+#define CHUNK_SIZE(chunk)        (*(   u64*) (chunk)      )
+#define CHUNK_PTR(chunk)         (*(void***)((chunk) +  8))
+#define CHUNK_NEXT(chunk)        (*( void**)((chunk) + 16))
+#define CHUNK_SIZE2(chunk, size) (*(   u64*)((chunk) + (size) - 8))
 
-#define CHUNK_LEFT(chunk)         ((void*)(chunk) - CHUNK_SIZE_SIZE(CHUNK_LEFT_SIZE(chunk)))
-#define CHUNK_RIGHT_(chunk)       ((void*)(chunk) + CHUNK_SIZE_SIZE(CHUNK_SIZE(chunk))
-#define CHUNK_RIGHT(chunk, size)  ((void*)(chunk) + (size))
+#define CHUNK_LEFT(chunk)         ((chunk) - CHUNK_SIZE_SIZE(CHUNK_LEFT_SIZE(chunk)))
+#define CHUNK_RIGHT_(chunk)       ((chunk) + CHUNK_SIZE_SIZE(CHUNK_SIZE(chunk))
+#define CHUNK_RIGHT(chunk, size)  ((chunk) + (size))
 
 // LE O SIZE COM A FLAG DE FREE
-#define CHUNK_LEFT_SIZE(chunk)         (*(u64*)((void*)(chunk) - 8))
-#define CHUNK_RIGHT_SIZE(chunk, size)  (*(u64*)((void*)(chunk) + (size)))
+#define CHUNK_LEFT_SIZE(chunk)         (*(u64*)((chunk) - 8))
+#define CHUNK_RIGHT_SIZE(chunk, size)  (*(u64*)((chunk) + (size)))
 
 #define FIRST_SIZE  0x00000010ULL
 #define SECOND_SIZE 0x00000013ULL
@@ -71,7 +71,7 @@ typedef uint64_t u64;
 #define BUFF_SIZE (4ULL*1024*1024*1024)
 
 // A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
-static init initialize = 1;
+static int initialize = 1;
 
 void free (void* chunk) {
 
@@ -163,17 +163,22 @@ void* realloc (void* chunk, size_t sizeWanted_) {
     if (chunk == NULL)
         return malloc(sizeWanted_);
 
-    // LIDÁ SOMENTE COM TAMANHO TOTAL DO CHUNK; E SE PRECISAR, ALINHA
-    const u64 sizeWanted = ((u64)sizeWanted_ + 16 + 7) & ~0b111ULL;
+    // LIDÁ SOMENTE COM TAMANHO TOTAL DO CHUNK
+    // QUANDO VIRAR UM FREE, VAI PRECISAR DE 2*8 BYTES, ENTÃO ESTE É O MÍNIMO
+    // ALINHADO A 8 BYTES
+    const u64 sizeWanted = ((u64)(sizeWanted_ < 16 ? 16 : sizeWanted_) + 16 + 7) & ~0b111ULL;
 
-    //
+    // FOI NOS PASSADO O DATA; VAI PARA O CHUNK
     chunk -= 8;
 
+    // JA SABEMOS QUE ESTE CHUNK ESTÁ EM USO, ENTÃO NÃO PRECISA REMOVER A FLAG DE FREE
     u64 size = CHUNK_SIZE(chunk);
 
     // SE JÁ TEM, NÃO PRECISA FAZER NADA
-    if (sizeWanted <= size)
+    if (sizeWanted <= size) {
+        // TODO: FIXME: SE FOR PARA DIMINUIR, DIMINUI!!!
         return chunk + 8;
+    }
 
     // SE PRECISAR, ALINHA
     u64 sizeNeeded = ((sizeWanted - size) + 7) & ~0b111ULL;
@@ -186,14 +191,14 @@ void* realloc (void* chunk, size_t sizeWanted_) {
     if (sizeWanted > (size + rightSize)) {
         // NAO TEM ESPAÇO NA DIREITA; ALOCA UM NOVO
         void* const data = malloc(sizeWanted - 16);
-
+        // CONSEGUIU?
         if (data) {
-            // CONSEGUIU
             // COPIA ELE
             memcpy(data, chunk + 8, size - 16);
             // SE LIVRA DELE
             free(chunk);
-        } return data;
+        } //
+        return data;
     }
 
     // AUMENTA PELA DIREITA
@@ -211,16 +216,16 @@ void* realloc (void* chunk, size_t sizeWanted_) {
         right += sizeNeeded;
         // REESCREVE E RELINKA ELE
         CHUNK_SIZE (right)               = CHUNK_SIZE_FREE(rightSizeNew);
-        CHUNK_PTR  (right)               = CHUNK_PTR(right);
+        CHUNK_PTR  (right)               = CHUNK_PTR (right);
         CHUNK_NEXT (right)               = CHUNK_NEXT(right);
         CHUNK_SIZE2(right, rightSizeNew) = CHUNK_SIZE_FREE(rightSizeNew);
-        CHUNK_PTR(CHUNK_NEXT(right)) = &CHUNK_NEXT(right);
-        *CHUNK_PTR(right) = right;
+        CHUNK_PTR(CHUNK_NEXT(right))    = &CHUNK_NEXT(right);
+       *CHUNK_PTR(right) = right;
     }
 
     // REESCREVE ELE
-    CHUNK_SIZE (chunk)       = CHUNK_SIZE_FREE(size);
-    CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
+    CHUNK_SIZE (chunk)       = CHUNK_SIZE_USED(size);
+    CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_USED(size);
 
     return chunk + 8;
 }
@@ -271,10 +276,10 @@ static void initializer (void) {
 
         const u64 size = BUFF_SIZE - HEADS_N*8 - 8 - 8;
 
-        CHUNK_SIZE (chunk) = CHUNK_SIZE_FREE(size);
-        CHUNK_PTR  (chunk) = (void**)(BUFFER + HEADS_N*8 - 8);
-        CHUNK_NEXT (chunk) = NULL;
-        CHUNK_SIZE2(chunk) = CHUNK_SIZE_FREE(size);
+        CHUNK_SIZE (chunk)       = CHUNK_SIZE_FREE(size);
+        CHUNK_PTR  (chunk)       = (void**)(BUFFER + HEADS_N*8 - 8);
+        CHUNK_NEXT (chunk)       = NULL;
+        CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
 
         //
         *CHUNK_PTR(chunk) = chunk;
