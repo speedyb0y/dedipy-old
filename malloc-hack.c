@@ -1,8 +1,28 @@
+/*
+
+  gcc -Wall -Werror -march=native -O2 -c -fpic malloc32.c
+  gcc -Wall -Werror -march=native -O2 -shared -o libmalloc32.so malloc32.o
+
+*/
+
+#define _GNU_SOURCE 1
+#define _LARGEFILE64_SOURCE 64
+#define _FILE_OFFSET_BITS 64
 
 #include <stdint.h>
 #include <stddef.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <sys/resource.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <sched.h>
+#include <errno.h>
 
 #define loop while (1)
 #define elif else if
@@ -48,7 +68,10 @@ typedef uint64_t u64;
 //
 #define BUFFER ((void*)20000000ULL)
 
-static int cpu = -1;
+#define BUFF_SIZE (4ULL*1024*1024*1024)
+
+// A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
+static init initialize = 1;
 
 void free (void* chunk) {
 
@@ -209,31 +232,73 @@ void* reallocarray (void *ptr, size_t nmemb, size_t size) {
     abort();
 }
 
+static void initializer (void) {
+
+    if (initialize) {
+        // AINDA NÃO INICIALIZOU
+        initialize = 0;
+
+        // SCHED AFFINITY CPU
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(14, &set);
+        if (sched_setaffinity(0, sizeof(set), &set))
+            abort();
+
+#if 1
+        // SCHED SCHEDULING FIFO
+        struct sched_param params;
+        memset(&params, 0, sizeof(params));
+        params.sched_priority = 1;
+        if (sched_setscheduler(0, SCHED_FIFO, &params))
+            abort();
+#endif
+
+        // MMMAP ...
+        if (mmap(BUFFER, BUFF_SIZE, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0) != BUFFER)
+            abort();
+
+        // BUFFER                       BUFFER + BUFF_SIZE
+        // |____________________________|
+        // | HEADS | 0 |    CHUNK   | 0 |
+        memset(BUFFER, 0, HEADS_N*8);
+
+        // LEFT AND RIGHT
+        *(u64*)(BUFFER + HEADS_N*8)     = 0;
+        *(u64*)(BUFFER + BUFF_SIZE - 8) = 0;
+
+        void* const chunk = BUFFER + HEADS_N*8 + 8;
+
+        const u64 size = BUFF_SIZE - HEADS_N*8 - 8 - 8;
+
+        CHUNK_SIZE (chunk) = CHUNK_SIZE_FREE(size);
+        CHUNK_PTR  (chunk) = (void**)(BUFFER + HEADS_N*8 - 8);
+        CHUNK_NEXT (chunk) = NULL;
+        CHUNK_SIZE2(chunk) = CHUNK_SIZE_FREE(size);
+
+        //
+        *CHUNK_PTR(chunk) = chunk;
+    }
+}
+
 void* malloc (size_t size) {
 
-  (void)size;
+    initializer();
 
-  abort();
+    (void)size;
 
-  return NULL;
+    abort();
+
+    return NULL;
 }
 
 void sync (void) {
 
 }
 
-int syncfs (int cpu_) {
+int syncfs (int fd) {
 
-    if (cpu != -1) {
-        // AINDA NÃO INICIALIZOU
-        cpu = cpu_;
-        // SCHED AFFINITY CPU
-        // SCHED AFFINITY FIFO
-        // MMMAP ...
-        if (BUFFER != BUFFER) {
-            abort();
-        }
-    }
+    (void)fd;
 
     return 0;
 }
