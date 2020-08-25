@@ -51,19 +51,19 @@ typedef uint64_t u64;
 #define CHUNK_LEFT_SIZE(chunk)         (*(u64*)((chunk) - 8))
 #define CHUNK_RIGHT_SIZE(chunk, size)  (*(u64*)((chunk) + (size)))
 
-#define FIRST_SIZE  0x00000010ULL
-#define SECOND_SIZE 0x00000013ULL
-#define LAST_SIZE   0x2CCCCCCCULL
-#define LMT_SIZE    0x33333333ULL
+// 32 38 44 51 57 64 76 89 102 115 128 153 179 204 230 256 307 358 409 460 512 614 716 819 921 1024 1228 1433 1638 1843 2048 2457 2867 3276 3686 4096 4915 5734 6553 7372 8192 9830 11468 13107 14745 16384 19660 22937 26214 29491 32768 39321 45875 52428 58982 65536 78643 91750 104857 117964 131072 157286 183500 209715 235929 262144 314572 367001 419430 471859 524288 629145 734003 838860 943718 1048576 1258291 1468006 1677721 1887436 2097152 2516582 2936012 3355443 3774873 4194304 5033164 5872025 6710886 7549747 8388608 10066329 11744051 13421772 15099494 16777216 20132659 23488102 26843545 30198988 33554432 40265318 46976204 53687091 60397977 67108864 80530636 93952409 107374182 120795955 134217728 161061273 187904819 214748364 241591910 268435456 322122547 375809638 429496729 483183820 536870912 644245094 751619276 858993459 966367641 1073741824 1288490188 1503238553 1717986918
 
-#define N_START 4
+#define HEADS_N 128
 
-// PARA FICAR UNIFORME TEM QUE SER = (X_COUNT*X_SALT)
+#define N_START 5
 #define X_DIVISOR 5
 #define X_SALT 1
 #define X_LAST 5
 
-#define HEADS_N 128
+#define FIRST_SIZE  0x0000000000000020ULL
+#define SECOND_SIZE 0x0000000000000026ULL
+#define LAST_SIZE   0x0000000059999999ULL
+#define LMT_SIZE    0x0000000066666666ULL
 
 //
 #define BUFFER ((void*)20000000ULL)
@@ -141,12 +141,19 @@ void free (void* chunk) {
     *ptr = chunk;
 }
 
-void* calloc (size_t n, size_t size) {
+// If nmemb or size is 0, then calloc() returns either NULL, or a unique pointer value that can later be successfully passed to free().
+// If the multiplication of nmemb and size would result in integer overflow, then calloc() returns an error.
+void* calloc (size_t n, size_t size_) {
 
-    // The  calloc()  function allocates memory for an array of nmemb elements of size bytes each and returns a pointer to the allocated memory.  The memory is set to zero.  If nmemb or size is 0, then calloc() returns either NULL, or a unique pointer value that can later be successfully passed to
-    // free().  If the multiplication of nmemb and size would result in integer overflow, then calloc() returns an error.  By contrast, an integer overflow would not be detected in the following call to malloc(), with the result that an incorrectly sized block of memory would be allocated:
+    const u64 size = (u64)n * (u64)size_;
 
-      return malloc(n * size);
+    void* const data = malloc_(size);
+
+    // INITIALIZE IT
+    if (data)
+        memset(data, 0, size);
+
+    return data;
 }
 
 // The  realloc()  function returns a pointer to the newly allocated memory, which is suitably aligned for any built-in type, or NULL if the request failed.
