@@ -2,11 +2,6 @@
 
   TODO: FIXME: reduzir o PTR e o NEXT para um u32, múltiplo de 16
 
-  gcc -Wall -Werror -march=native -O2 -c -fpic malloc32.c
-  gcc -Wall -Werror -march=native -O2 -shared -o libmalloc32.so malloc32.o
-
-  LD_PRELOAD=/home/speedyb0y/libmalloc32.so bash
-
 */
 
 #define _GNU_SOURCE 1
