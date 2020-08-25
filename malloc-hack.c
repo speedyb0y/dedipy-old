@@ -148,90 +148,56 @@ void* realloc (void* chunk, size_t sizeWanted_) {
 
     u64 size = CHUNK_SIZE(chunk);
 
-    if (sizeWanted > size) {
+    // SE JÁ TEM, NÃO PRECISA FAZER NADA
+    if (sizeWanted <= size)
+        return chunk + 8;
 
-        // SE PRECISAR, ALINHA
-        u64 sizeNeeded = ((sizeWanted - size) + 7) & ~0b111ULL;
+    // SE PRECISAR, ALINHA
+    u64 sizeNeeded = ((sizeWanted - size) + 7) & ~0b111ULL;
 
-        void** const ptr  = CHUNK_PTR (chunk);
-        void*  const next = CHUNK_NEXT(chunk);
+    void* right = CHUNK_RIGHT(chunk, size);
 
-        void* left  = CHUNK_LEFT (chunk);
-        void* right = CHUNK_RIGHT(chunk, size);
+    // LE O TAMANHO SE FOR LIVRE, OU 0 SE ESTIVER EM USO
+    const u64 rightSize = CHUNK_SIZE_IS_FREE(CHUNK_SIZE(right)) ? CHUNK_SIZE_SIZE(CHUNK_SIZE(right)) : 0;
 
-        void** const leftPtr  = CHUNK_PTR(left);
-        void** const rightPtr = CHUNK_PTR(right);
+    if (sizeWanted > (size + rightSize)) {
+        // NAO TEM ESPAÇO NA DIREITA; ALOCA UM NOVO
+        void* const data = malloc(sizeWanted - 16);
 
-        void* const leftNext  = CHUNK_NEXT(left);
-        void* const rightNext = CHUNK_NEXT(right);
-
-        const u64 leftSize  = CHUNK_SIZE_IS_FREE(CHUNK_SIZE(left))  ? CHUNK_SIZE_SIZE(CHUNK_SIZE(left))  : 0;
-        const u64 rightSize = CHUNK_SIZE_IS_FREE(CHUNK_SIZE(right)) ? CHUNK_SIZE_SIZE(CHUNK_SIZE(right)) : 0;
-
-        if (sizeWanted <= (size + rightSize)) {
-            // AUMENTA PELA DIREITA
-
-            const u64 rightSizeNew = rightSize - sizeNeeded;
-
-            if (rightSizeNew < 32) {
-                // CONSOME ELE POR INTEIRO
-                size += rightSize;
-                // REMOVE ELE DE SUA LISTA
-                if (rightNext)
-                    CHUNK_PTR(rightNext) = rightPtr;
-                *rightPtr = rightNext;
-            } else { // PEGA ESTE PEDAÇO DELE
-                size  += sizeNeeded;
-                right += sizeNeeded;
-                // REESCREVE E RELINKA ELE
-                CHUNK_SIZE (right)               = CHUNK_SIZE_FREE(rightSizeNew);
-                CHUNK_PTR  (right)               = rightPtr;
-                CHUNK_NEXT (right)               = rightNext;
-                CHUNK_SIZE2(right, rightSizeNew) = CHUNK_SIZE_FREE(rightSizeNew);
-                CHUNK_PTR(rightNext) = &CHUNK_NEXT(right);
-                *rightPtr = right;
-            }
-
-        } elif (sizeWanted <= (size + leftSize)) {
-            // AUMENTA PELA ESQUERDA
-
-            const u64 leftSizeNew = leftSize - sizeNeeded;
-
-            if (leftSizeNew < 32) {
-                // CONSOME ELE POR INTEIRO
-                sizeNeeded += leftSize;
-                // REMOVE ELE DE SUA LISTA
-                if (leftNext)
-                    CHUNK_PTR(leftNext) = leftPtr;
-                *leftPtr = leftNext;
-            } else { // PEGA ESTE PEDAÇO DELE
-                // REESCREVE ELE; SOMENTE O SIZE MUDOU
-                // CONTINUA NO MESMO LUGAR; NÃO PRECISA RELINKAR
-                CHUNK_SIZE (left)              = CHUNK_SIZE_FREE(leftSizeNew);
-                CHUNK_SIZE2(left, leftSizeNew) = CHUNK_SIZE_FREE(leftSizeNew);
-            }
-
-            // MOVE, OTIMIZADO
-            memmove(chunk - sizeNeeded, chunk, size);
-
-            chunk -= sizeNeeded;
-            size  += sizeNeeded;
-
-        } elif (sizeWanted <= (size + leftSize + rightSize)) {
-            // AUMENTA POR AMBOS
-            abort();
-        } else
-            return NULL;
-
-        // REESCREVE ELE
-        CHUNK_SIZE (chunk)       = CHUNK_SIZE_FREE(size);
-        CHUNK_PTR  (chunk)       = ptr;
-        CHUNK_NEXT (chunk)       = next;
-        CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
-        // RELINKA ELE
-        CHUNK_PTR(next) = &CHUNK_NEXT(chunk);
-        *ptr = chunk;
+        if (data) {
+            // CONSEGUIU
+            // COPIA ELE
+            memcpy(data, chunk + 8, size - 16);
+            // SE LIVRA DELE
+            free(chunk);
+        } return data;
     }
+
+    // AUMENTA PELA DIREITA
+    const u64 rightSizeNew = rightSize - sizeNeeded;
+
+    if (rightSizeNew < 32) {
+        // CONSOME ELE POR INTEIRO
+        size += rightSize;
+        // REMOVE ELE DE SUA LISTA
+        if (CHUNK_NEXT(right))
+            CHUNK_PTR(CHUNK_NEXT(right)) = CHUNK_PTR(right);
+        *CHUNK_PTR(right) = CHUNK_NEXT(right);
+    } else { // PEGA ESTE PEDAÇO DELE
+        size  += sizeNeeded;
+        right += sizeNeeded;
+        // REESCREVE E RELINKA ELE
+        CHUNK_SIZE (right)               = CHUNK_SIZE_FREE(rightSizeNew);
+        CHUNK_PTR  (right)               = CHUNK_PTR(right);
+        CHUNK_NEXT (right)               = CHUNK_NEXT(right);
+        CHUNK_SIZE2(right, rightSizeNew) = CHUNK_SIZE_FREE(rightSizeNew);
+        CHUNK_PTR(CHUNK_NEXT(right)) = &CHUNK_NEXT(right);
+        *CHUNK_PTR(right) = right;
+    }
+
+    // REESCREVE ELE
+    CHUNK_SIZE (chunk)       = CHUNK_SIZE_FREE(size);
+    CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
 
     return chunk + 8;
 }
