@@ -1,7 +1,11 @@
 /*
 
+  TODO: FIXME: reduzir o PTR e o NEXT para um u32, múltiplo de 16
+
   gcc -Wall -Werror -march=native -O2 -c -fpic malloc32.c
   gcc -Wall -Werror -march=native -O2 -shared -o libmalloc32.so malloc32.o
+
+  LD_PRELOAD=/home/speedyb0y/libmalloc32.so bash
 
 */
 
@@ -66,14 +70,65 @@ typedef uint64_t u64;
 #define LMT_SIZE    0x0000000066666666ULL
 
 //
-#define BUFFER ((void*)20000000ULL)
+#define BUFFER ((void*)0x20000000ULL)
 
-#define BUFF_SIZE (4ULL*1024*1024*1024)
+#define BUFF_SIZE (1ULL*1024*1024*1024)
 
 // A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
 static int initialize = 1;
 
+static void initializer (void) {
+
+    if (initialize) {
+        // AINDA NÃO INICIALIZOU
+        initialize = 0;
+
+        // SCHED AFFINITY CPU
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(14, &set);
+        if (sched_setaffinity(0, sizeof(set), &set))
+            abort();
+
+#if 1
+        // SCHED SCHEDULING FIFO
+        struct sched_param params;
+        memset(&params, 0, sizeof(params));
+        params.sched_priority = 1;
+        if (sched_setscheduler(0, SCHED_FIFO, &params))
+            abort();
+#endif
+
+        // MMMAP ...
+        if (mmap(BUFFER, BUFF_SIZE, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0) != BUFFER)
+            abort();
+
+        // BUFFER                       BUFFER + BUFF_SIZE
+        // |____________________________|
+        // | HEADS | 0 |    CHUNK   | 0 |
+        memset(BUFFER, 0, HEADS_N*8);
+
+        // LEFT AND RIGHT
+        *(u64*)(BUFFER + HEADS_N*8)     = 0;
+        *(u64*)(BUFFER + BUFF_SIZE - 8) = 0;
+
+        void* const chunk = BUFFER + HEADS_N*8 + 8;
+
+        const u64 size = BUFF_SIZE - HEADS_N*8 - 8 - 8;
+
+        CHUNK_SIZE (chunk)       = CHUNK_SIZE_FREE(size);
+        CHUNK_PTR  (chunk)       = (void**)(BUFFER + HEADS_N*8 - 8);
+        CHUNK_NEXT (chunk)       = NULL;
+        CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
+
+        //
+        *CHUNK_PTR(chunk) = chunk;
+    }
+}
+
 void free (void* chunk) {
+
+    write(2, "\n\nFREE()\n\n", sizeof("\n\nFREE()\n\n"));
 
     if (chunk == NULL)
         return;
@@ -111,13 +166,13 @@ void free (void* chunk) {
     // WRITE THE SIZE
     CHUNK_SIZE(chunk) = CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
 
-    // --- BASEADO NESTE size, SELECINAR UM PREV
-    uint idx;
+    // BASEADO NESTE SIZE, SELECINAR UM PTR
+    void** ptr;
 
     if (size < SECOND_SIZE) // JAMAIS É  <  FIRST_SIZE
-       idx = 0;
+       ptr = BUFFER;
     elif (size >= LAST_SIZE)
-       idx = HEADS_N - 1;
+       ptr = BUFFER + (HEADS_N - 1)*8;
     else {
         uint n = N_START;
         uint x = 0;
@@ -127,10 +182,8 @@ void free (void* chunk) {
            n += x == 0;
         }
         // voltasGrandes*(voltasMiniN) + voltasMini - (1 pq é para usar o antes deste)
-        idx = (n - N_START)*(X_LAST/X_SALT) + x/X_SALT - 1;
+        ptr = BUFFER + ((n - N_START)*(X_LAST/X_SALT) + x/X_SALT - 1)*8;
     }
-
-    void** ptr = (void**)(BUFFER + idx*8);
 
     CHUNK_PTR (chunk) =  ptr;
     CHUNK_NEXT(chunk) = *ptr;
@@ -141,9 +194,79 @@ void free (void* chunk) {
     *ptr = chunk;
 }
 
+static void* malloc_ (u64 size) {
+
+    initializer();
+
+    //
+    size = ((size < 16 ? 16 : size) + 16 + 7) & ~0b111ULL;
+
+    // PODE ATÉ TER, MAS NÃO É GARANTIDO
+    // TERIA QUE IR PARA O ÚLTIMO, E ALI PROCURAR UM QUE SE ENCAIXE
+    // MAS PREFIRO MANTER OTIMIZADO DO QUE SUPORTAR ISSO
+    if (size > LAST_SIZE) // >= LMT_SIZE
+        return NULL;
+
+    // BASEADO NESTE SIZE, SELECINAR UM PTR
+    void** ptr;
+
+    if (size < SECOND_SIZE) // JAMAIS É  <  FIRST_SIZE
+       ptr = BUFFER;
+    else {
+        uint n = N_START;
+        uint x = 0;
+
+        while (size >= (((1ULL << n) + ((1ULL << n) * x)/X_DIVISOR))) { // 1 <<n --&gt; 2^n
+           x = (x + X_SALT) % X_LAST;
+           n += x == 0;
+        }
+        // voltasGrandes*(voltasMiniN) + voltasMini - (1 pq é para usar o antes deste)
+        ptr = BUFFER + ((n - N_START)*(X_LAST/X_SALT) + x/X_SALT - 1)*8;
+    }
+
+    // A PARTIR DESTE PTR É GARANTIDO QUE TODOS OS CHUNKS TENHAM ESTE TAMANHO
+    void* free;
+
+    // ENCONTRA A PRIMEIRA LISTA LIVRE
+    while ((free = *ptr) == NULL)
+        ptr++;
+
+    // TAMANHO DESTE CHUNK FREE
+    u64 freeSize = CHUNK_SIZE_SIZE(CHUNK_SIZE(free));
+
+    // TAMANHO QUE ELE FICARIA AO RETIRAR O CHUNK
+    const u64 freeSizeNew = freeSize - size;
+
+    if (freeSizeNew >= 32) { // CONSOME UMA PARTE; SÓ PRECISA REESCREVER O TAMANHO
+        CHUNK_SIZE (free)               = CHUNK_SIZE_FREE(freeSizeNew);
+        CHUNK_SIZE2(free, freeSizeNew)  = CHUNK_SIZE_FREE(freeSizeNew);
+        //
+        free += freeSizeNew;
+        freeSize = size;
+    } else { // CONSOME ELE
+        // REMOVE ELE DE SUA LISTA
+        if (CHUNK_NEXT(free))
+            CHUNK_PTR(CHUNK_NEXT(free)) = CHUNK_PTR(free);
+        *CHUNK_PTR(free) = CHUNK_NEXT(free);
+    }
+
+    CHUNK_SIZE (free)           = CHUNK_SIZE_USED(freeSize);
+    CHUNK_SIZE2(free, freeSize) = CHUNK_SIZE_USED(freeSize);
+
+    return free + 8;
+}
+
+void* malloc (size_t size) {
+    write(2, "\n\nMALLOC()\n\n", sizeof("\n\nMALLOC()\n\n"));
+
+    return malloc_((u64)size);
+}
+
 // If nmemb or size is 0, then calloc() returns either NULL, or a unique pointer value that can later be successfully passed to free().
 // If the multiplication of nmemb and size would result in integer overflow, then calloc() returns an error.
 void* calloc (size_t n, size_t size_) {
+
+    write(2, "\n\nCALLOC()\n\n", sizeof("\n\nCALLOC()\n\n"));
 
     const u64 size = (u64)n * (u64)size_;
 
@@ -162,6 +285,8 @@ void* calloc (size_t n, size_t size_) {
 // If size was equal to 0, either NULL or a pointer suitable to be passed to free() is returned.
 // If realloc() fails, the original block is left untouched; it is not freed or moved.
 void* realloc (void* chunk, size_t sizeWanted_) {
+
+    write(2, "\n\nREALLOC()\n\n", sizeof("\n\nREALLOC()\n\n"));
 
     if (sizeWanted_ == 0)
         return NULL;
@@ -238,70 +363,13 @@ void* realloc (void* chunk, size_t sizeWanted_) {
 }
 
 void* reallocarray (void *ptr, size_t nmemb, size_t size) {
+
+    write(2, "\n\nREALLOCARRAY()\n\n", sizeof("\n\nREALLOCARRAY()\n\n"));
+
     (void)ptr;
     (void)nmemb;
     (void)size;
     abort();
-}
-
-static void initializer (void) {
-
-    if (initialize) {
-        // AINDA NÃO INICIALIZOU
-        initialize = 0;
-
-        // SCHED AFFINITY CPU
-        cpu_set_t set;
-        CPU_ZERO(&set);
-        CPU_SET(14, &set);
-        if (sched_setaffinity(0, sizeof(set), &set))
-            abort();
-
-#if 1
-        // SCHED SCHEDULING FIFO
-        struct sched_param params;
-        memset(&params, 0, sizeof(params));
-        params.sched_priority = 1;
-        if (sched_setscheduler(0, SCHED_FIFO, &params))
-            abort();
-#endif
-
-        // MMMAP ...
-        if (mmap(BUFFER, BUFF_SIZE, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0) != BUFFER)
-            abort();
-
-        // BUFFER                       BUFFER + BUFF_SIZE
-        // |____________________________|
-        // | HEADS | 0 |    CHUNK   | 0 |
-        memset(BUFFER, 0, HEADS_N*8);
-
-        // LEFT AND RIGHT
-        *(u64*)(BUFFER + HEADS_N*8)     = 0;
-        *(u64*)(BUFFER + BUFF_SIZE - 8) = 0;
-
-        void* const chunk = BUFFER + HEADS_N*8 + 8;
-
-        const u64 size = BUFF_SIZE - HEADS_N*8 - 8 - 8;
-
-        CHUNK_SIZE (chunk)       = CHUNK_SIZE_FREE(size);
-        CHUNK_PTR  (chunk)       = (void**)(BUFFER + HEADS_N*8 - 8);
-        CHUNK_NEXT (chunk)       = NULL;
-        CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
-
-        //
-        *CHUNK_PTR(chunk) = chunk;
-    }
-}
-
-void* malloc (size_t size) {
-
-    initializer();
-
-    (void)size;
-
-    abort();
-
-    return NULL;
 }
 
 void sync (void) {
