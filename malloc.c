@@ -9,18 +9,13 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <stdint.h>
-#include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/file.h>
-#include <sys/stat.h>
-#include <sys/resource.h>
 #include <sys/mman.h>
-#include <fcntl.h>
-#include <sched.h>
 #include <errno.h>
 
 #include "util.h"
