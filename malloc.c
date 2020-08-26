@@ -23,10 +23,10 @@
 #include "malloc.h"
 
 // A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
-static uint processID;
-static uint processesN;
+static uint processID = 0;
+static uint processesN = 0;
 static u64 processPID = 0;
-static u64 processCode;
+static u64 processCode = 0;
 
 static void initializer (void) {
     if (processPID == 0) {
