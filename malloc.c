@@ -23,36 +23,36 @@
 #include "malloc.h"
 
 // A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
-static uint processID = 0;
-static uint processesN = 0;
-static u64 processPID = 0;
-static u64 processCode = 0;
+static uint slaveID = 0;
+static uint slavesN = 0;
+static u64 slavePID = 0;
+static u64 slaveCode = 0;
 
 static void initializer (void) {
-    if (processPID == 0) {
+    if (slavePID == 0) {
         // AINDA NÃO INICIALIZOU
 
-        WRITESTR("INITIALIZING");
+        WRITESTR("MALLOC - INITIALIZING");
 
         //
-        processPID = getpid();
+        slavePID = getpid();
 
         //
-        BufferProcessInfo processInfo;
+        SlaveInfo slaveInfo;
 
-        if (read(SELF_RD_FD, &processInfo, sizeof(processInfo)) != sizeof(processInfo))
+        if (read(SELF_GET_FD, &slaveInfo, sizeof(slaveInfo)) != sizeof(slaveInfo))
             abort();
 
         //
-        if (processPID != processInfo.pid)
+        if (slavePID != slaveInfo.pid)
             abort();
 
-        processID = processInfo.id;
-        processesN = processInfo.n;
-        processCode = processInfo.code;
+        slaveID = slaveInfo.id;
+        slavesN = slaveInfo.n;
+        slaveCode = slaveInfo.code;
 
         // AGORA SIM MAPEIA
-        if (mmap(BUFFER, processInfo.size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, BUFFER_FD, processInfo.start) != BUFFER)
+        if (mmap(BUFFER, slaveInfo.size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, BUFFER_FD, slaveInfo.start) != BUFFER)
             abort();
 
         //  BUFFER                       BUFFER + processSize
@@ -64,24 +64,24 @@ static void initializer (void) {
 
         // LEFT AND RIGHT
         *(u64*)BUFFER_L                   = 0;
-        *(u64*)BUFFER_R(processInfo.size) = 0;
+        *(u64*)BUFFER_R(slaveInfo.size) = 0;
 
         *(void**)BUFFER_HEADS_LAST = BUFFER_CHUNKS;
 
-        const u64 size = processInfo.size - BUFFER_HEADS_SIZE - 8 - 8;
+        const u64 size = slaveInfo.size - BUFFER_HEADS_SIZE - 8 - 8;
 
         CHUNK_SIZE (BUFFER_CHUNKS)       = CHUNK_SIZE_FREE(size);
         CHUNK_PTR  (BUFFER_CHUNKS)       = BUFFER_HEADS_LAST;
         CHUNK_NEXT (BUFFER_CHUNKS)       = NULL;
         CHUNK_SIZE2(BUFFER_CHUNKS, size) = CHUNK_SIZE_FREE(size);
 
-        WRITESTR("INITIALIZING - DONE");
+        WRITESTR("MALLOC - INITIALIZING - DONE");
     }
 }
 
 void free (void* chunk) {
 
-    WRITESTR("FREE");
+    WRITESTR("MALLOC - FREE");
 
     if (chunk == NULL)
         return;
@@ -211,7 +211,7 @@ static void* malloc_ (u64 size) {
 
 void* malloc (size_t size) {
 
-    WRITESTR("MALLOC");
+    WRITESTR("MALLOC - MALLOC");
 
     return malloc_((u64)size);
 }
@@ -220,7 +220,7 @@ void* malloc (size_t size) {
 // If the multiplication of nmemb and size would result in integer overflow, then calloc() returns an error.
 void* calloc (size_t n, size_t size_) {
 
-    WRITESTR("CALLOC");
+    WRITESTR("MALLOC - CALLOC");
 
     const u64 size = (u64)n * (u64)size_;
 
@@ -240,7 +240,7 @@ void* calloc (size_t n, size_t size_) {
 // If realloc() fails, the original block is left untouched; it is not freed or moved.
 void* realloc (void* chunk, size_t sizeWanted_) {
 
-    WRITESTR("REALLOC");
+    WRITESTR("MALLOC - REALLOC");
 
     if (sizeWanted_ == 0)
         return NULL;
@@ -318,7 +318,7 @@ void* realloc (void* chunk, size_t sizeWanted_) {
 
 void* reallocarray (void *ptr, size_t nmemb, size_t size) {
 
-    WRITESTR("REALLOCARRAY");
+    WRITESTR("MALLOC - REALLOCARRAY");
 
     (void)ptr;
     (void)nmemb;
