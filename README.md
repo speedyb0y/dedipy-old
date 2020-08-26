@@ -13,5 +13,5 @@ This project is supposed to work as a skell for other projects using this model:
  - A timer is set up to keep things running, by interrupting blocking system calls
  
  - A hacked malloc/free system, using OS-reserved contiguous HUGE PAGES.
-   This big buffer is manually divided by process ID / size.
-   This way we deal with memory in a more COMPACT, FAST, CONTIGUOUS and DETERMINISTIC way.
+      This big buffer is manually divided by process ID / size.
+      This way we deal with memory in a more COMPACT, FAST, CONTIGUOUS and DETERMINISTIC way.
