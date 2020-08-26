@@ -46,9 +46,9 @@
 //
 #define BUFFER_FD 16384
 
-typedef struct BufferProcessInfo BufferProcessInfo;
+typedef struct SlaveInfo SlaveInfo;
 
-struct BufferProcessInfo {
+struct SlaveInfo {
     u64 pid;
     u64 id;
     u64 n; // quantos processos tem
@@ -58,19 +58,20 @@ struct BufferProcessInfo {
 };
 
 // QUALQUER UM ESCREVE, QUALQUER UM LE
-#define ALL_RD_FD 16385
-#define ALL_WR_FD 16386
+#define ANY_GET_FD 16385
+#define ANY_PUT_FD 16386
 
-// PROCESSOS ESPECÍFICOS
-#define DAEMON_RD_FD 16387
-#define DAEMON_WR_FD 16388
+// MASTER
+#define MASTER_GET_FD 16387
+#define MASTER_PUT_FD 16388
+
+// SLAVES ESPECÍFICOS
+#define SLAVE_GET_FD(slaveID) (16390 + 2*(slaveID))
+#define SLAVE_PUT_FD(slaveID) (16391 + 2*(slaveID))
 
 //
-#define SELF_RD_FD 16389
-#define SELF_WR_FD 16390
-
-#define PROCESS_RD_FD(processID) (16390 + 2*(processID)) // LE O QUE É PARA O PROCESSO
-#define PROCESS_WR_FD(processID) (16391 + 2*(processID)) // ESCREVE PARA O PROCESSO
+#define SELF_GET_FD 16389
+#define SELF_PUT_FD 16390
 
 #define FD_MAX 65536
 
