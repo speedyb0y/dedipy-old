@@ -1,5 +1,4 @@
 #!/bin/bash
-# EXECUTAR COMO ROOT
 
 set -e
 
