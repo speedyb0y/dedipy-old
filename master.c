@@ -24,12 +24,7 @@
 #include <sched.h>
 #include <errno.h>
 
-#define loop while (1)
-#define elif else if
-
-typedef unsigned int uint;
-
-typedef uint64_t u64;
+#include "util.h"
 
 #include "malloc.h"
 
@@ -37,11 +32,11 @@ typedef uint64_t u64;
 #define BUFF_PATH "malloc-buffer"
 
 #define CPU0 4
-#define PROCESSES_N 8
+#define SLAVES_N 8
 
-typedef struct ProcessKnown ProcessKnown;
+typedef struct Slave Slave;
 
-struct ProcessKnown {
+struct Slave {
     u64 pid;
     u64 code;
     u64 launched; // TIME IT WAS LAUNCHED
@@ -50,7 +45,7 @@ struct ProcessKnown {
 };
 
 // TODO: FIXME: certificar que a soma de todos caberá
-static u64 processesSizes[PROCESSES_N] = {
+static const u64 slavesSizes[SLAVES_N] = {
        8*1024*1024,
       16*1024*1024,
       32*1024*1024,
@@ -61,9 +56,9 @@ static u64 processesSizes[PROCESSES_N] = {
     1024*1024*1024,
 };
 
-static ProcessKnown processes[PROCESSES_N];
+static Slave slaves[SLAVES_N];
 
-static uint processesCounter;
+static uint slavesCounter;
 
 int main (void) {
 
@@ -75,19 +70,26 @@ int main (void) {
 
     setrlimit(RLIMIT_NOFILE, &limit);
 
-    //
-    processesCounter = 0;
+    // TODO: FIXME: other limits
+
+    // TODO: FIXME: setup /proc pipe limits
+    // TODO: FIXME: setup /proc scheduling
+
+    // TODO: FIXME: setup pipes sizes
 
     //
-    { u64 processStart = 0;
-        uint processID = PROCESSES_N;
-        while (processID--) { ProcessKnown* const process = &processes[processID];
-            process->pid = 0;
-            process->code = 0;
-            process->launched = 0;
-            process->start = processStart;
-            process->size = processesSizes[processID];
-            processStart += processesSizes[processID]; // UM DEPOIS DO OUTRO
+    slavesCounter = 0;
+
+    //
+    { u64 slaveStart = 0;
+        uint slaveID = SLAVES_N;
+        while (slaveID--) { Slave* const slave = &slaves[slaveID];
+            slave->pid = 0;
+            slave->code = 0;
+            slave->launched = 0;
+            slave->start = slaveStart;
+            slave->size = slavesSizes[slaveID];
+            slaveStart += slavesSizes[slaveID]; // UM DEPOIS DO OUTRO
         }
     }
 
@@ -104,9 +106,17 @@ int main (void) {
     if (sched_setscheduler(0, SCHED_FIFO, &params) == -1)
         return 1;
 
-    { //
-        const int fd = open(BUFF_PATH, O_RDWR | O_DIRECT | O_NOATIME | O_NOCTTY);
+    // CPU AFFINITY
+    cpu_set_t set;
 
+    CPU_ZERO(&set);
+    CPU_SET(1, &set);
+
+    if (sched_setaffinity(0, sizeof(set), &set))
+        return 1;
+
+    { // OPEN THE BUFFER FILE
+        const int fd = open(BUFF_PATH, O_RDWR | O_DIRECT | O_NOATIME | O_NOCTTY);
         if (fd == -1)
             return 1;
         if (dup2(fd, BUFFER_FD) != BUFFER_FD)
@@ -117,30 +127,29 @@ int main (void) {
 
     // MAP_LOCKED vs MAP_NORESERVE
     // TAMANHO TEM QUE SER MULTIPLO DO PAGE SIZE A SER USADO
-    if (mmap(BUFFER, BUFF_SIZE, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_FIXED_NOREPLACE| MAP_SHARED, BUFFER_FD, 0) != BUFFER)
+    if (mmap(BUFFER, BUFF_SIZE, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_FIXED_NOREPLACE | MAP_SHARED, BUFFER_FD, 0) != BUFFER)
         return 1;
 
-    //
-    int fds[2];
+    { //
+        int fds[2] = { -1, -1 };
 
-    if (pipe2(fds, O_DIRECT) ||
-        dup2(fds[0], ALL_RD_FD) != ALL_RD_FD || close(fds[0]) ||
-        dup2(fds[1], ALL_WR_FD) != ALL_WR_FD || close(fds[1])
-      ) return 1;
+        if (pipe2(fds, O_DIRECT) ||
+            dup2(fds[0], ANY_GET_FD) != ANY_GET_FD || close(fds[0]) ||
+            dup2(fds[1], ANY_PUT_FD) != ANY_PUT_FD || close(fds[1])
+          ) return 1;
 
-    if (pipe2(fds, O_DIRECT) ||
-        dup2(fds[0], DAEMON_RD_FD) != DAEMON_RD_FD || close(fds[0]) ||
-        dup2(fds[1], DAEMON_WR_FD) != DAEMON_WR_FD || close(fds[1])
-      ) return 1;
+        if (pipe2(fds, O_DIRECT) ||
+            dup2(fds[0], MASTER_GET_FD) != MASTER_GET_FD || close(fds[0]) ||
+            dup2(fds[1], MASTER_PUT_FD) != MASTER_PUT_FD || close(fds[1])
+          ) return 1;
 
-    //
-    { uint processID = PROCESSES_N;
-        while (processID--) {
+        uint slaveID = SLAVES_N;
+
+        while (slaveID--)
             if (pipe2(fds, O_DIRECT) ||
-              dup2(fds[0], PROCESS_RD_FD(processID)) != PROCESS_RD_FD(processID) || close(fds[0]) ||
-              dup2(fds[1], PROCESS_WR_FD(processID)) != PROCESS_WR_FD(processID) || close(fds[1])
+              dup2(fds[0], SLAVE_GET_FD(slaveID)) != SLAVE_GET_FD(slaveID) || close(fds[0]) ||
+              dup2(fds[1], SLAVE_PUT_FD(slaveID)) != SLAVE_PUT_FD(slaveID) || close(fds[1])
             ) return 1;
-        }
     }
 
     { // INSTALA O TIMER
@@ -154,26 +163,26 @@ int main (void) {
     }
 
     // LANÇA TODOS OS PROCESSOS
-    uint processID = PROCESSES_N;
+    uint slaveID = SLAVES_N;
 
-    while (processID--) {
+    while (slaveID--) {
 
-          const u64 processLaunched = time(NULL);
+          const u64 slaveLaunched = time(NULL);
 
-          const pid_t processPID = fork();
+          const pid_t slavePID = fork();
 
-          if (processPID == -1)
+          if (slavePID == -1)
               return 1;
 
-          if (processPID == 0) {
+          if (slavePID == 0) {
               //
-              if (dup2(PROCESS_RD_FD(processID), SELF_RD_FD) != SELF_RD_FD ||
-                  dup2(PROCESS_WR_FD(processID), SELF_WR_FD) != SELF_WR_FD
+              if (dup2(SLAVE_GET_FD(slaveID), SELF_GET_FD) != SELF_GET_FD ||
+                  dup2(SLAVE_PUT_FD(slaveID), SELF_PUT_FD) != SELF_PUT_FD
                 ) return 1;
               // CPU AFFINITY
               cpu_set_t set;
               CPU_ZERO(&set);
-              CPU_SET(CPU0 + processID, &set);
+              CPU_SET(CPU0 + slaveID, &set);
               if (sched_setaffinity(0, sizeof(set), &set))
                   return 1;
               // EXECUTE IT
@@ -182,29 +191,33 @@ int main (void) {
           }
 
           //
-          ProcessKnown* const process = &processes[processID];
+          Slave* const slave = &slaves[slaveID];
 
-          process->pid      = processPID;
-          process->code     = processesCounter++;
-          process->launched = processLaunched;
+          slave->pid      = slavePID;
+          slave->code     = slavesCounter++;
+          slave->launched = slaveLaunched;
 
           //
-          struct BufferProcessInfo processInfo;
+          struct SlaveInfo slaveInfo;
 
-          processInfo.id    = processID;
-          processInfo.n     = PROCESSES_N;
-          processInfo.pid   = process->pid;
-          processInfo.code  = process->code;
-          processInfo.start = process->start;
-          processInfo.size  = process->size;
+          slaveInfo.id    = slaveID;
+          slaveInfo.n     = SLAVES_N;
+          slaveInfo.pid   = slave->pid;
+          slaveInfo.code  = slave->code;
+          slaveInfo.start = slave->start;
+          slaveInfo.size  = slave->size;
 
           // TODO: FIXME: cuidado para nao bloquear aqui :/
-          if (write(PROCESS_WR_FD(processID), &processInfo, sizeof(BufferProcessInfo)) != sizeof(BufferProcessInfo))
+          if (write(SLAVE_PUT_FD(slaveID), &slaveInfo, sizeof(SlaveInfo)) != sizeof(SlaveInfo))
               return 1;
     }
 
+    write(SLAVE_PUT_FD(1), "EU SOU O BOZO\n", 14);
+
     // WAIT ALL PROCESSES TO EXIT
-    while (wait(NULL) != -1 || errno == EINTR);
+    while (wait(NULL) != -1 || errno == EINTR)
+        WRITESTR("MASTER - WAITED/INTERRUPTED")
+        ;
 
     if (errno != ECHILD)
         return 1;
