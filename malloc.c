@@ -23,107 +23,70 @@
 #include <sched.h>
 #include <errno.h>
 
-#define loop while (1)
-#define elif else if
+#include "util.h"
 
-typedef unsigned int uint;
-
-typedef uint64_t u64;
-
-#define CHUNK_SIZE_SIZE(size)    ((size) & ~1ULL)
-#define CHUNK_SIZE_IS_FREE(size) ((size) &  1ULL)
-
-#define CHUNK_SIZE_FREE(size)  (size)
-#define CHUNK_SIZE_USED(size) ((size) | 1ULL)
-
-// LE O SIZE COM A FLAG DE FREE
-#define CHUNK_SIZE(chunk)        (*(   u64*) (chunk)      )
-#define CHUNK_PTR(chunk)         (*(void***)((chunk) +  8))
-#define CHUNK_NEXT(chunk)        (*( void**)((chunk) + 16))
-#define CHUNK_SIZE2(chunk, size) (*(   u64*)((chunk) + (size) - 8))
-
-#define CHUNK_LEFT(chunk)         ((chunk) - CHUNK_SIZE_SIZE(CHUNK_LEFT_SIZE(chunk)))
-#define CHUNK_RIGHT_(chunk)       ((chunk) + CHUNK_SIZE_SIZE(CHUNK_SIZE(chunk))
-#define CHUNK_RIGHT(chunk, size)  ((chunk) + (size))
-
-// LE O SIZE COM A FLAG DE FREE
-#define CHUNK_LEFT_SIZE(chunk)         (*(u64*)((chunk) - 8))
-#define CHUNK_RIGHT_SIZE(chunk, size)  (*(u64*)((chunk) + (size)))
-
-// 32 38 44 51 57 64 76 89 102 115 128 153 179 204 230 256 307 358 409 460 512 614 716 819 921 1024 1228 1433 1638 1843 2048 2457 2867 3276 3686 4096 4915 5734 6553 7372 8192 9830 11468 13107 14745 16384 19660 22937 26214 29491 32768 39321 45875 52428 58982 65536 78643 91750 104857 117964 131072 157286 183500 209715 235929 262144 314572 367001 419430 471859 524288 629145 734003 838860 943718 1048576 1258291 1468006 1677721 1887436 2097152 2516582 2936012 3355443 3774873 4194304 5033164 5872025 6710886 7549747 8388608 10066329 11744051 13421772 15099494 16777216 20132659 23488102 26843545 30198988 33554432 40265318 46976204 53687091 60397977 67108864 80530636 93952409 107374182 120795955 134217728 161061273 187904819 214748364 241591910 268435456 322122547 375809638 429496729 483183820 536870912 644245094 751619276 858993459 966367641 1073741824 1288490188 1503238553 1717986918
-
-#define HEADS_N 128
-
-#define N_START 5
-#define X_DIVISOR 5
-#define X_SALT 1
-#define X_LAST 5
-
-#define FIRST_SIZE  0x0000000000000020ULL
-#define SECOND_SIZE 0x0000000000000026ULL
-#define LAST_SIZE   0x0000000059999999ULL
-#define LMT_SIZE    0x0000000066666666ULL
-
-//
-#define BUFFER ((void*)0x20000000ULL)
-
-#define BUFF_SIZE (1ULL*1024*1024*1024)
+#include "malloc.h"
 
 // A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
-static int initialize = 1;
+static uint processID;
+static uint processesN;
+static u64 processPID = 0;
+static u64 processCode;
 
 static void initializer (void) {
-
-    if (initialize) {
+    if (processPID == 0) {
         // AINDA NÃO INICIALIZOU
-        initialize = 0;
 
-        // SCHED AFFINITY CPU
-        cpu_set_t set;
-        CPU_ZERO(&set);
-        CPU_SET(14, &set);
-        if (sched_setaffinity(0, sizeof(set), &set))
-            abort();
-
-#if 1
-        // SCHED SCHEDULING FIFO
-        struct sched_param params;
-        memset(&params, 0, sizeof(params));
-        params.sched_priority = 1;
-        if (sched_setscheduler(0, SCHED_FIFO, &params))
-            abort();
-#endif
-
-        // MMMAP ...
-        if (mmap(BUFFER, BUFF_SIZE, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0) != BUFFER)
-            abort();
-
-        // BUFFER                       BUFFER + BUFF_SIZE
-        // |____________________________|
-        // | HEADS | 0 |    CHUNK   | 0 |
-        memset(BUFFER, 0, HEADS_N*8);
-
-        // LEFT AND RIGHT
-        *(u64*)(BUFFER + HEADS_N*8)     = 0;
-        *(u64*)(BUFFER + BUFF_SIZE - 8) = 0;
-
-        void* const chunk = BUFFER + HEADS_N*8 + 8;
-
-        const u64 size = BUFF_SIZE - HEADS_N*8 - 8 - 8;
-
-        CHUNK_SIZE (chunk)       = CHUNK_SIZE_FREE(size);
-        CHUNK_PTR  (chunk)       = (void**)(BUFFER + HEADS_N*8 - 8);
-        CHUNK_NEXT (chunk)       = NULL;
-        CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
+        WRITESTR("INITIALIZING");
 
         //
-        *CHUNK_PTR(chunk) = chunk;
+        processPID = getpid();
+
+        //
+        BufferProcessInfo processInfo;
+
+        if (read(SELF_RD_FD, &processInfo, sizeof(processInfo)) != sizeof(processInfo))
+            abort();
+
+        //
+        if (processPID != processInfo.pid)
+            abort();
+
+        processID = processInfo.id;
+        processesN = processInfo.n;
+        processCode = processInfo.code;
+
+        // AGORA SIM MAPEIA
+        if (mmap(BUFFER, processInfo.size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, BUFFER_FD, processInfo.start) != BUFFER)
+            abort();
+
+        //  BUFFER                       BUFFER + processSize
+        // |____________________________|
+        // | HEADS | 0 |    CHUNK   | 0 |
+
+        // HEADS
+        memset(BUFFER_HEADS, 0, BUFFER_HEADS_SIZE);
+
+        // LEFT AND RIGHT
+        *(u64*)BUFFER_L                   = 0;
+        *(u64*)BUFFER_R(processInfo.size) = 0;
+
+        *(void**)BUFFER_HEADS_LAST = BUFFER_CHUNKS;
+
+        const u64 size = processInfo.size - BUFFER_HEADS_SIZE - 8 - 8;
+
+        CHUNK_SIZE (BUFFER_CHUNKS)       = CHUNK_SIZE_FREE(size);
+        CHUNK_PTR  (BUFFER_CHUNKS)       = BUFFER_HEADS_LAST;
+        CHUNK_NEXT (BUFFER_CHUNKS)       = NULL;
+        CHUNK_SIZE2(BUFFER_CHUNKS, size) = CHUNK_SIZE_FREE(size);
+
+        WRITESTR("INITIALIZING - DONE");
     }
 }
 
 void free (void* chunk) {
 
-    write(2, "\n\nFREE()\n\n", sizeof("\n\nFREE()\n\n"));
+    WRITESTR("FREE");
 
     if (chunk == NULL)
         return;
@@ -252,7 +215,8 @@ static void* malloc_ (u64 size) {
 }
 
 void* malloc (size_t size) {
-    write(2, "\n\nMALLOC()\n\n", sizeof("\n\nMALLOC()\n\n"));
+
+    WRITESTR("MALLOC");
 
     return malloc_((u64)size);
 }
@@ -261,7 +225,7 @@ void* malloc (size_t size) {
 // If the multiplication of nmemb and size would result in integer overflow, then calloc() returns an error.
 void* calloc (size_t n, size_t size_) {
 
-    write(2, "\n\nCALLOC()\n\n", sizeof("\n\nCALLOC()\n\n"));
+    WRITESTR("CALLOC");
 
     const u64 size = (u64)n * (u64)size_;
 
@@ -281,7 +245,7 @@ void* calloc (size_t n, size_t size_) {
 // If realloc() fails, the original block is left untouched; it is not freed or moved.
 void* realloc (void* chunk, size_t sizeWanted_) {
 
-    write(2, "\n\nREALLOC()\n\n", sizeof("\n\nREALLOC()\n\n"));
+    WRITESTR("REALLOC");
 
     if (sizeWanted_ == 0)
         return NULL;
@@ -359,7 +323,7 @@ void* realloc (void* chunk, size_t sizeWanted_) {
 
 void* reallocarray (void *ptr, size_t nmemb, size_t size) {
 
-    write(2, "\n\nREALLOCARRAY()\n\n", sizeof("\n\nREALLOCARRAY()\n\n"));
+    WRITESTR("REALLOCARRAY");
 
     (void)ptr;
     (void)nmemb;
