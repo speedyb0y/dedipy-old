@@ -54,7 +54,7 @@
 #define CHUNK_START_LEFT(c, s)  ((Chunk*)((void*)(c) - (s)))
 #define CHUNK_START_RIGHT(c, s) ((Chunk*)((void*)(c) + (s)))
 
-typedef union Chunk Chunk;
+typedef struct Chunk Chunk;
 typedef struct ChunkUnkn ChunkUnkn;
 typedef struct ChunkFree ChunkFree;
 typedef struct ChunkUsed ChunkUsed;
@@ -63,9 +63,6 @@ typedef struct ChunkTail ChunkTail;
 struct ChunkUnkn { u64 size; };
 struct ChunkFree { u64 size; Chunk** ptr; Chunk* next; };
 struct ChunkUsed { u64 size; char data[]; };
-
-union Chunk { ChunkUnkn unknown; ChunkFree free; ChunkUsed used; };
-
 struct ChunkTail { u64 size; };
 
 //
