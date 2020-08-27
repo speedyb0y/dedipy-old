@@ -24,7 +24,6 @@
 
 #define _CHUNK(t, c) \
     __builtin_choose_expr(( \
-        __builtin_types_compatible_p(typeof(c), void*) || \
         __builtin_types_compatible_p(typeof(c), Chunk*) || \
         __builtin_types_compatible_p(typeof(c), ChunkUnkn*) || \
         __builtin_types_compatible_p(typeof(c), ChunkFree*) || \
