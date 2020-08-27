@@ -130,12 +130,10 @@ void* malloc (size_t size_) {
     initializer();
 
     // CONSIDERA O CHUNK INTEIRO, E O ALINHA
-    u64 size = size_ > CHUNK_SIZE_MIN ? (((u64)size_ + 7ULL) & ~0b111ULL) : CHUNK_SIZE_MIN;
+    u64 size = CHUNK_SIZE_FROM_DATA_SIZE(size_);
 
-    // PODE ATÉ TER, MAS NÃO É GARANTIDO
-    // TERIA QUE IR PARA O ÚLTIMO, E ALI PROCURAR UM QUE SE ENCAIXE
-    // MAS PREFIRO MANTER OTIMIZADO DO QUE SUPORTAR ISSO
-    if (size > CHUNK_SIZE_MAX) // >= LMT_SIZE
+    //
+    if (size > CHUNK_SIZE_MAX)
         return NULL;
 
     // PEGA UM LIVRE A SER USADO
@@ -158,7 +156,7 @@ void* malloc (size_t size_) {
         CHUNK_FREE(used             )->size = CHUNK_SIZE_FREE(freeSizeNew);
         CHUNK_TAIL(used, freeSizeNew)->size = CHUNK_SIZE_FREE(freeSizeNew);
         //
-        used = CHUNK((void*)used + freeSizeNew);
+        used = CHUNK_START_RIGHT(used, freeSizeNew);
         usedSize = size;
     } else { // CONSOME ELE: REMOVE ELE DE SUA LISTA
         if (CHUNK_FREE(used)->next)
@@ -241,7 +239,7 @@ void* realloc (void* const data_, const size_t dataSizeNew_) {
                 Chunk** const ptr = CHUNK_FREE(right)->ptr;
                 Chunk* const next = CHUNK_FREE(right)->next;
                 // MOVE O COMEÇO PARA A DIREITA
-                right = CHUNK((void*)right + sizeNeeded);
+                right = CHUNK_START_RIGHT(right, sizeNeeded);
                 // REESCREVE
                 CHUNK_FREE(right)->size = CHUNK_SIZE_FREE(rightSizeNew);
                 CHUNK_FREE(right)->ptr = ptr;
