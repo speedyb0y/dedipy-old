@@ -15,7 +15,6 @@
 // TODO: FIXME: forçar compilacao a falhar :/
 #define __CHUNK(t, c) \
     __builtin_choose_expr(( \
-        __builtin_types_compatible_p(typeof(c), void*) || \
         __builtin_types_compatible_p(typeof(c), Chunk*) || \
         __builtin_types_compatible_p(typeof(c), ChunkUnkn*) || \
         __builtin_types_compatible_p(typeof(c), ChunkFree*) || \
@@ -57,8 +56,11 @@
 // NOTE: deveriausar offseof(Chunk.free, data)
 #define CHUNK_FROM_CHUNK_USED_DATA(data) ((Chunk*)((void*)(data) - sizeof(u64)))
 
-#define CHUNK_LEFT(chunk)         CHUNK((void*)(chunk) - ((ChunkTail*)((void*)(chunk) - sizeof(ChunkTail)))->size)
-#define CHUNK_RIGHT(chunk, size)  CHUNK((void*)(chunk) + (size))
+#define CHUNK_LEFT(chunk)         ((Chunk*)((void*)(chunk) - ((ChunkTail*)((void*)(chunk) - sizeof(ChunkTail)))->size))
+#define CHUNK_RIGHT(chunk, size)  ((Chunk*)((void*)(chunk) + (size)))
+
+#define CHUNK_START_LEFT(c, s)  ((Chunk*)((void*)(c) - (s)))
+#define CHUNK_START_RIGHT(c, s) ((Chunk*)((void*)(c) + (s)))
 
 typedef union Chunk Chunk;
 typedef struct ChunkUnkn ChunkUnkn;
