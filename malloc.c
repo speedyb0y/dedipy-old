@@ -16,215 +16,171 @@
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <errno.h>
 
 #include "util.h"
 
-#include "malloc.h"
+#include "ms.h"
 
-// A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
-static uint slaveID = 0;
-static uint slavesN = 0;
-static u64 slavePID = 0;
-static u64 slaveCode = 0;
+static int initialize = 0;
 
+// TODO: FIXME: WE WILL NEED A SIGNAL HANDLER
 static void initializer (void) {
-    if (slavePID == 0) {
-        // AINDA NÃO INICIALIZOU
 
-        WRITESTR("MALLOC - INITIALIZING");
+    if (initialize) {
+        initialize = 0;
 
-        //
-        slavePID = getpid();
+        DBGPRINT("MALLOC - INITIALIZING");
 
-        //
-        SlaveInfo slaveInfo;
+        u64 start = 0, size = 0;
 
-        if (read(SELF_GET_FD, &slaveInfo, sizeof(slaveInfo)) != sizeof(slaveInfo))
+        if (!(sscanf(getenv("SLAVEPARAMS"), "%016llX" "%016llX", (uintll*)&start, (uintll*)&size) == 2 && start && size))
             abort();
-
-        //
-        if (slavePID != slaveInfo.pid)
-            abort();
-
-        slaveID = slaveInfo.id;
-        slavesN = slaveInfo.n;
-        slaveCode = slaveInfo.code;
 
         // AGORA SIM MAPEIA
-        if (mmap(BUFFER, slaveInfo.size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, BUFFER_FD, slaveInfo.start) != BUFFER)
+        if (mmap(BUFFER, size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_FIXED_NOREPLACE | MAP_SHARED | MAP_LOCKED | MAP_POPULATE, BUFFER_FD, start) != BUFFER)
             abort();
 
-        //  BUFFER                       BUFFER + processSize
-        // |____________________________|
-        // | HEADS | 0 |    CHUNK   | 0 |
+        if (BUFFER_INFO_PID != getpid())
+            abort();
 
-        // HEADS
-        memset(BUFFER_HEADS, 0, BUFFER_HEADS_SIZE);
-
-        // LEFT AND RIGHT
-        *(u64*)BUFFER_L                   = 0;
-        *(u64*)BUFFER_R(slaveInfo.size) = 0;
-
-        *(void**)BUFFER_HEADS_LAST = BUFFER_CHUNKS;
-
-        const u64 size = slaveInfo.size - BUFFER_HEADS_SIZE - 8 - 8;
-
-        CHUNK_SIZE (BUFFER_CHUNKS)       = CHUNK_SIZE_FREE(size);
-        CHUNK_PTR  (BUFFER_CHUNKS)       = BUFFER_HEADS_LAST;
-        CHUNK_NEXT (BUFFER_CHUNKS)       = NULL;
-        CHUNK_SIZE2(BUFFER_CHUNKS, size) = CHUNK_SIZE_FREE(size);
-
-        WRITESTR("MALLOC - INITIALIZING - DONE");
-    }
-}
-
-void free (void* chunk) {
-
-    WRITESTR("MALLOC - FREE");
-
-    if (chunk == NULL)
-        return;
-
-    // VAI PARA O COMEÇO DO CHUNK
-    chunk -= 8;
-
-    // NÃO PRECISA REMOVER A FLAG DE FREE POIS NÃO É FREE
-    u64 size = CHUNK_SIZE(chunk);
-
-    // JOIN WITH THE LEFT CHUNK
-    u64 leftSize = CHUNK_LEFT_SIZE(chunk);
-
-    if (CHUNK_SIZE_IS_FREE(leftSize)) {
-       leftSize = CHUNK_SIZE_SIZE(leftSize);
-       size += leftSize;
-       chunk -= leftSize;
-        if (CHUNK_NEXT(chunk))
-            CHUNK_PTR(CHUNK_NEXT(chunk)) = CHUNK_PTR(chunk);
-       *CHUNK_PTR(chunk) = CHUNK_NEXT(chunk);
-    }
-
-    // JOIN WITH THE RIGHT CHUNK
-    void* const right = CHUNK_RIGHT(chunk, size);
-
-    u64 rightSize = CHUNK_SIZE(right);
-
-    if (CHUNK_SIZE_IS_FREE(rightSize)) {
-        size += CHUNK_SIZE_SIZE(rightSize);
-        if (CHUNK_NEXT(right)) // SE TEM UM FILHO,
-            CHUNK_PTR(CHUNK_NEXT(right)) = CHUNK_PTR(right); // O PAI DO MEU FILHO É O MEU PAI
-       *CHUNK_PTR(right) = CHUNK_NEXT(right); // E O FILHO DO MEU PAI É O MEU FILHO
-    }
-
-    // WRITE THE SIZE
-    CHUNK_SIZE(chunk) = CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_FREE(size);
-
-    // BASEADO NESTE SIZE, SELECINAR UM PTR
-    void** ptr;
-
-    if (size < SECOND_SIZE) // JAMAIS É  <  FIRST_SIZE
-       ptr = BUFFER;
-    elif (size >= LAST_SIZE)
-       ptr = BUFFER + (HEADS_N - 1)*8;
-    else {
-        uint n = N_START;
-        uint x = 0;
-
-        while (size >= (((1ULL << n) + ((1ULL << n) * x)/X_DIVISOR))) { // 1 <<n --&gt; 2^n
-           x = (x + X_SALT) % X_LAST;
-           n += x == 0;
+        { //
+            char name[256];
+            snprintf(name, sizeof(name), PROGNAME "#%u", (uint)BUFFER_INFO_ID);
+            //
+            if (prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0))
+                abort();
         }
-        // voltasGrandes*(voltasMiniN) + voltasMini - (1 pq é para usar o antes deste)
-        ptr = BUFFER + ((n - N_START)*(X_LAST/X_SALT) + x/X_SALT - 1)*8;
+
+        DBGPRINT("MALLOC - INITIALIZING - DONE");
     }
-
-    CHUNK_PTR (chunk) =  ptr;
-    CHUNK_NEXT(chunk) = *ptr;
-
-    if (*ptr)
-       CHUNK_PTR(*ptr) = &CHUNK_NEXT(chunk);
-
-    *ptr = chunk;
 }
 
-static void* malloc_ (u64 size) {
+// BASEADO NESTE SIZE, SELECINAR UM PTR
+// A PARTIR DESTE PTR É GARANTIDO QUE TODOS OS CHUNKS TENHAM ESTE TAMANHO
+// JAMAIS É size < FIRST_SIZE
+// JAMAIS É size > LAST_SIZE
+static inline Chunk** head (u64 size) {
+
+    uint n = N_START;
+    uint x = 0;
+
+    while (size >= (((1ULL << n) + ((1ULL << n) * x)/X_DIVISOR))) { // 1 <<n --&gt; 2^n
+       x = (x + X_SALT) % X_LAST;
+       n += x == 0;
+    }
+
+    // voltasGrandes*(voltasMiniN) + voltasMini - (1 pq é para usar o antes deste)
+    return &BUFFER_HEADS[(n - N_START)*(X_LAST/X_SALT) + x/X_SALT - 1];
+}
+
+void free (void* const data) {
+
+    DBGPRINT("MALLOC - FREE");
+
+    if (data) {
+        // VAI PARA O COMEÇO DO CHUNK
+        Chunk* chunk = CHUNK_FROM_CHUNK_USED_DATA(data);
+
+        u64 size = CHUNK_UNKN_SIZE(chunk);
+
+        // JOIN WITH THE LEFT CHUNK
+        Chunk* const left = CHUNK_LEFT(chunk);
+
+        if (CHUNK_IS_FREE(left)) {
+            size += CHUNK_FREE_SIZE(left);
+            if (CHUNK_FREE(left)->next)
+                CHUNK_FREE(CHUNK_FREE(left)->next)->ptr = CHUNK_FREE(left)->ptr;
+           *CHUNK_FREE(left)->ptr = CHUNK_FREE(left)->next;
+            chunk = left;
+        }
+
+        // JOIN WITH THE RIGHT CHUNK
+        Chunk* const right = CHUNK_RIGHT(chunk, size);
+
+        if (CHUNK_IS_FREE(right)) {
+            size += CHUNK_FREE_SIZE(right);
+            if (CHUNK_FREE(right)->next)
+                CHUNK_FREE(CHUNK_FREE(right)->next)->ptr = CHUNK_FREE(right)->ptr;
+           *CHUNK_FREE(right)->ptr = CHUNK_FREE(right)->next;
+        }
+
+        // WRITE THE SIZE
+        CHUNK_FREE(chunk      )->size = CHUNK_SIZE_FREE(size);
+        CHUNK_TAIL(chunk, size)->size = CHUNK_SIZE_FREE(size);
+
+        // INSERE ELE NA LISTA DE FREES
+        Chunk** const ptr = head(size);
+
+        CHUNK_FREE(chunk)->ptr = ptr;
+        CHUNK_FREE(chunk)->next = *ptr;
+
+        if (*ptr)
+           CHUNK_FREE(*ptr)->ptr = &CHUNK_FREE(chunk)->next;
+
+        *ptr = chunk;
+    }
+}
+
+void* malloc (size_t size_) {
+
+    DBGPRINT("MALLOC - MALLOC");
 
     initializer();
 
-    //
-    size = ((size < 16 ? 16 : size) + 16 + 7) & ~0b111ULL;
+    // CONSIDERA O CHUNK INTEIRO, E O ALINHA
+    u64 size = size_ > CHUNK_SIZE_MIN ? (((u64)size_ + 7ULL) & ~0b111ULL) : CHUNK_SIZE_MIN;
 
     // PODE ATÉ TER, MAS NÃO É GARANTIDO
     // TERIA QUE IR PARA O ÚLTIMO, E ALI PROCURAR UM QUE SE ENCAIXE
     // MAS PREFIRO MANTER OTIMIZADO DO QUE SUPORTAR ISSO
-    if (size > LAST_SIZE) // >= LMT_SIZE
+    if (size > CHUNK_SIZE_MAX) // >= LMT_SIZE
         return NULL;
 
-    // BASEADO NESTE SIZE, SELECINAR UM PTR
-    void** ptr;
-
-    if (size < SECOND_SIZE) // JAMAIS É  <  FIRST_SIZE
-       ptr = BUFFER;
-    else {
-        uint n = N_START;
-        uint x = 0;
-
-        while (size >= (((1ULL << n) + ((1ULL << n) * x)/X_DIVISOR))) { // 1 <<n --&gt; 2^n
-           x = (x + X_SALT) % X_LAST;
-           n += x == 0;
-        }
-        // voltasGrandes*(voltasMiniN) + voltasMini - (1 pq é para usar o antes deste)
-        ptr = BUFFER + ((n - N_START)*(X_LAST/X_SALT) + x/X_SALT - 1)*8;
-    }
-
-    // A PARTIR DESTE PTR É GARANTIDO QUE TODOS OS CHUNKS TENHAM ESTE TAMANHO
-    void* free;
+    // PEGA UM LIVRE A SER USADO
+    Chunk* used;
 
     // ENCONTRA A PRIMEIRA LISTA LIVRE
-    while ((free = *ptr) == NULL)
+    Chunk** ptr = head(size);
+
+    while ((used = *ptr) == NULL)
         ptr++;
 
     // TAMANHO DESTE CHUNK FREE
-    u64 freeSize = CHUNK_SIZE_SIZE(CHUNK_SIZE(free));
+    u64 usedSize = CHUNK_FREE_SIZE(used);
 
     // TAMANHO QUE ELE FICARIA AO RETIRAR O CHUNK
-    const u64 freeSizeNew = freeSize - size;
+    const u64 freeSizeNew = usedSize - size;
 
-    if (freeSizeNew >= 32) { // CONSOME UMA PARTE; SÓ PRECISA REESCREVER O TAMANHO
-        CHUNK_SIZE (free)               = CHUNK_SIZE_FREE(freeSizeNew);
-        CHUNK_SIZE2(free, freeSizeNew)  = CHUNK_SIZE_FREE(freeSizeNew);
+    if (CHUNK_SIZE_MAX <= freeSizeNew) {
+        // CONSOME UMA PARTE, NO FINAL DELE
+        CHUNK_FREE(used             )->size = CHUNK_SIZE_FREE(freeSizeNew);
+        CHUNK_TAIL(used, freeSizeNew)->size = CHUNK_SIZE_FREE(freeSizeNew);
         //
-        free += freeSizeNew;
-        freeSize = size;
-    } else { // CONSOME ELE
-        // REMOVE ELE DE SUA LISTA
-        if (CHUNK_NEXT(free))
-            CHUNK_PTR(CHUNK_NEXT(free)) = CHUNK_PTR(free);
-        *CHUNK_PTR(free) = CHUNK_NEXT(free);
+        used = CHUNK((void*)used + freeSizeNew);
+        usedSize = size;
+    } else { // CONSOME ELE: REMOVE ELE DE SUA LISTA
+        if (CHUNK_FREE(used)->next)
+            CHUNK_FREE(CHUNK_FREE(used)->next)->ptr = CHUNK_FREE(used)->ptr;
+        *CHUNK_FREE(used)->ptr = CHUNK_FREE(used)->next;
     }
 
-    CHUNK_SIZE (free)           = CHUNK_SIZE_USED(freeSize);
-    CHUNK_SIZE2(free, freeSize) = CHUNK_SIZE_USED(freeSize);
+    CHUNK_USED(used          )->size = CHUNK_SIZE_USED(usedSize);
+    CHUNK_TAIL(used, usedSize)->size = CHUNK_SIZE_USED(usedSize);
 
-    return free + 8;
-}
-
-void* malloc (size_t size) {
-
-    WRITESTR("MALLOC - MALLOC");
-
-    return malloc_((u64)size);
+    return CHUNK_USED(used)->data;
 }
 
 // If nmemb or size is 0, then calloc() returns either NULL, or a unique pointer value that can later be successfully passed to free().
 // If the multiplication of nmemb and size would result in integer overflow, then calloc() returns an error.
 void* calloc (size_t n, size_t size_) {
 
-    WRITESTR("MALLOC - CALLOC");
+    DBGPRINT("MALLOC - CALLOC");
 
     const u64 size = (u64)n * (u64)size_;
 
-    void* const data = malloc_(size);
+    void* const data = malloc(size);
 
     // INITIALIZE IT
     if (data)
@@ -238,87 +194,96 @@ void* calloc (size_t n, size_t size_) {
 //    or different from ptr if the allocation was moved to a new address.
 // If size was equal to 0, either NULL or a pointer suitable to be passed to free() is returned.
 // If realloc() fails, the original block is left untouched; it is not freed or moved.
-void* realloc (void* chunk, size_t sizeWanted_) {
+void* realloc (void* const data_, const size_t dataSizeNew_) {
 
-    WRITESTR("MALLOC - REALLOC");
+    DBGPRINT("MALLOC - REALLOC");
 
-    if (sizeWanted_ == 0)
-        return NULL;
+    if (data_ == NULL)
+        return malloc(dataSizeNew_);
 
-    // TODO: FIXME: ESTÁ CERTO ISSO?
-    if (chunk == NULL)
-        return malloc(sizeWanted_);
-
-    // LIDÁ SOMENTE COM TAMANHO TOTAL DO CHUNK
-    // QUANDO VIRAR UM FREE, VAI PRECISAR DE 2*8 BYTES, ENTÃO ESTE É O MÍNIMO
-    // ALINHADO A 8 BYTES
-    const u64 sizeWanted = ((u64)(sizeWanted_ < 16 ? 16 : sizeWanted_) + 16 + 7) & ~0b111ULL;
+    // CONSIDERA O CHUNK INTEIRO, E O ALINHA
+    u64 sizeNew = CHUNK_SIZE_FROM_DATA_SIZE(dataSizeNew_);
 
     // FOI NOS PASSADO O DATA; VAI PARA O CHUNK
-    chunk -= 8;
+    Chunk* const chunk = CHUNK_FROM_CHUNK_USED_DATA(data_);
 
-    // JA SABEMOS QUE ESTE CHUNK ESTÁ EM USO, ENTÃO NÃO PRECISA REMOVER A FLAG DE FREE
-    u64 size = CHUNK_SIZE(chunk);
+    //
+    u64 size = CHUNK_USED_SIZE(chunk);
 
-    // SE JÁ TEM, NÃO PRECISA FAZER NADA
-    if (sizeWanted <= size) {
+    if (size >= sizeNew) {
+        // ELE SE AUTOFORNECE
+        if ((size - sizeNew) < 265)
+            // MAS NÃO VALE A PENA DIMINUIR
+            return data_;
         // TODO: FIXME: SE FOR PARA DIMINUIR, DIMINUI!!!
-        return chunk + 8;
+        return data_;
     }
 
-    // SE PRECISAR, ALINHA
-    u64 sizeNeeded = ((sizeWanted - size) + 7) & ~0b111ULL;
+    Chunk* right = CHUNK_RIGHT(chunk, size);
 
-    void* right = CHUNK_RIGHT(chunk, size);
+    // SÓ SE FOR FREE E SUFICIENTE
+    if (CHUNK_IS_FREE(right)) {
 
-    // LE O TAMANHO SE FOR LIVRE, OU 0 SE ESTIVER EM USO
-    const u64 rightSize = CHUNK_SIZE_IS_FREE(CHUNK_SIZE(right)) ? CHUNK_SIZE_SIZE(CHUNK_SIZE(right)) : 0;
+        const u64 rightSize = CHUNK_FREE_SIZE(right);
+        // O QUANTO VAMOS TENTAR RETIRAR DA DIREITA
+        const u64 sizeNeeded = sizeNew - size;
 
-    if (sizeWanted > (size + rightSize)) {
-        // NAO TEM ESPAÇO NA DIREITA; ALOCA UM NOVO
-        void* const data = malloc(sizeWanted - 16);
-        // CONSEGUIU?
-        if (data) {
-            // COPIA ELE
-            memcpy(data, chunk + 8, size - 16);
-            // SE LIVRA DELE
-            free(chunk);
-        } //
-        return data;
+        if (rightSize >= sizeNeeded) {
+            // DÁ SIM; VAMOS ALOCAR ARRANCANDO DA DIREITA
+
+            // O TAMANHO NOVO DA DIREITA
+            const u64 rightSizeNew = rightSize - sizeNeeded;
+
+            if (rightSizeNew >= CHUNK_SIZE_MAX) {
+                // PEGA ESTE PEDAÇO DELE, PELA ESQUERDA
+                size += sizeNeeded;
+                // LEMBRA QUAIS ERAM
+                Chunk** const ptr = CHUNK_FREE(right)->ptr;
+                Chunk* const next = CHUNK_FREE(right)->next;
+                // MOVE O COMEÇO PARA A DIREITA
+                right = CHUNK((void*)right + sizeNeeded);
+                // REESCREVE
+                CHUNK_FREE(right)->size = CHUNK_SIZE_FREE(rightSizeNew);
+                CHUNK_FREE(right)->ptr = ptr;
+                CHUNK_FREE(right)->next = next;
+                CHUNK_TAIL(right, rightSizeNew)->size = CHUNK_SIZE_FREE(rightSizeNew);
+                // RELINKA
+                if (CHUNK_FREE(right)->next)
+                    CHUNK_FREE(CHUNK_FREE(right)->next)->ptr = &CHUNK_FREE(right)->next;
+                *CHUNK_FREE(right)->ptr = right;
+            } else { // CONSOME ELE POR INTEIRO
+                size += rightSize;
+                // REMOVE ELE DE SUA LISTA
+                if (CHUNK_FREE(right)->next)
+                    CHUNK_FREE(CHUNK_FREE(right)->next)->ptr = CHUNK_FREE(right)->ptr;
+                *CHUNK_FREE(right)->ptr = CHUNK_FREE(right)->next;
+            }
+
+            // REESCREVE ELE
+            CHUNK_USED(chunk      )->size = CHUNK_SIZE_USED(size);
+            CHUNK_TAIL(chunk, size)->size = CHUNK_SIZE_USED(size);
+
+            return CHUNK_USED(chunk)->data;
+        }
     }
 
-    // AUMENTA PELA DIREITA
-    const u64 rightSizeNew = rightSize - sizeNeeded;
+    // NAO TEM ESPAÇO NA DIREITA; ALOCA UM NOVO
+    void* const data = malloc(dataSizeNew_);
 
-    if (rightSizeNew < 32) {
-        // CONSOME ELE POR INTEIRO
-        size += rightSize;
-        // REMOVE ELE DE SUA LISTA
-        if (CHUNK_NEXT(right))
-            CHUNK_PTR(CHUNK_NEXT(right)) = CHUNK_PTR(right);
-        *CHUNK_PTR(right) = CHUNK_NEXT(right);
-    } else { // PEGA ESTE PEDAÇO DELE
-        size  += sizeNeeded;
-        right += sizeNeeded;
-        // REESCREVE E RELINKA ELE
-        CHUNK_SIZE (right)               = CHUNK_SIZE_FREE(rightSizeNew);
-        CHUNK_PTR  (right)               = CHUNK_PTR (right);
-        CHUNK_NEXT (right)               = CHUNK_NEXT(right);
-        CHUNK_SIZE2(right, rightSizeNew) = CHUNK_SIZE_FREE(rightSizeNew);
-        CHUNK_PTR(CHUNK_NEXT(right))    = &CHUNK_NEXT(right);
-       *CHUNK_PTR(right) = right;
+    if (data) {
+        // CONSEGUIU
+        // COPIA DO CHUNK ORIGINAL
+        memcpy(data, data_, size - sizeof(ChunkUsed) - sizeof(ChunkTail));
+        // LIBERA O CHUNK ORIGINAL
+        free(chunk);
     }
 
-    // REESCREVE ELE
-    CHUNK_SIZE (chunk)       = CHUNK_SIZE_USED(size);
-    CHUNK_SIZE2(chunk, size) = CHUNK_SIZE_USED(size);
-
-    return chunk + 8;
+    return data;
 }
 
 void* reallocarray (void *ptr, size_t nmemb, size_t size) {
 
-    WRITESTR("MALLOC - REALLOCARRAY");
+    DBGPRINT("MALLOC - REALLOCARRAY");
 
     (void)ptr;
     (void)nmemb;
@@ -336,3 +301,6 @@ int syncfs (int fd) {
 
     return 0;
 }
+
+
+// POR QUE PRECISA DO MSYNC???
