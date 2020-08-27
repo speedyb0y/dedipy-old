@@ -13,27 +13,19 @@
 #define CHUNK_SIZE_FROM_DATA_SIZE(dataSize) (_CHUNK_USED_SIZE(dataSize) > CHUNK_SIZE_MIN ? _CHUNK_USED_SIZE(dataSize) : CHUNK_SIZE_MIN)
 
 // TODO: FIXME: forçar compilacao a falhar :/
-#define __CHUNK(t, c) \
-    __builtin_choose_expr(( \
-        __builtin_types_compatible_p(typeof(c), Chunk*) || \
-        __builtin_types_compatible_p(typeof(c), ChunkUnkn*) || \
-        __builtin_types_compatible_p(typeof(c), ChunkFree*) || \
-        __builtin_types_compatible_p(typeof(c), ChunkUsed*) \
-        ), (t*)(c), (double)0 )
-
 #define _CHUNK(t, c) \
     __builtin_choose_expr(( \
         __builtin_types_compatible_p(typeof(c), Chunk*) || \
         __builtin_types_compatible_p(typeof(c), ChunkUnkn*) || \
         __builtin_types_compatible_p(typeof(c), ChunkFree*) || \
         __builtin_types_compatible_p(typeof(c), ChunkUsed*) \
-        ), (t*)(c), (double)0 )
+        ), (t*)(c), (long double)0 )
 
 // STORE
-#define CHUNK(chunk)      __CHUNK(Chunk,     chunk)
-#define CHUNK_UNKN(chunk)  _CHUNK(ChunkUnkn, chunk)
-#define CHUNK_FREE(chunk)  _CHUNK(ChunkFree, chunk)
-#define CHUNK_USED(chunk)  _CHUNK(ChunkUsed, chunk)
+#define CHUNK(chunk)      _CHUNK(Chunk,     chunk)
+#define CHUNK_UNKN(chunk) _CHUNK(ChunkUnkn, chunk)
+#define CHUNK_FREE(chunk) _CHUNK(ChunkFree, chunk)
+#define CHUNK_USED(chunk) _CHUNK(ChunkUsed, chunk)
 
 //
 #define CHUNK_IS_FREE(chunk) (CHUNK_UNKN(chunk)->size & 1ULL)
@@ -124,8 +116,8 @@ struct Buffer {
 #define X_SALT 1
 #define X_LAST 5
 
-#define FIRST_SIZE  0x0000000000000020ULL
-#define LAST_SIZE   0x0000000059999999ULL
+#define FIRST_SIZE 32ULL
+#define LAST_SIZE 1503238553ULL
 
 // QUALQUER UM ESCREVE, QUALQUER UM LE
 #define ANY_GET_FD (FD_MAX - 2)
