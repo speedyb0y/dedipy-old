@@ -12,11 +12,30 @@
 // O TAMANHO DO CHUNK TEM QUE CABER ELE QUANDO ESTIVER LIVRE
 #define CHUNK_SIZE_FROM_DATA_SIZE(dataSize) (_CHUNK_USED_SIZE(dataSize) > CHUNK_SIZE_MIN ? _CHUNK_USED_SIZE(dataSize) : CHUNK_SIZE_MIN)
 
+// TODO: FIXME: forçar compilacao a falhar :/
+#define __CHUNK(t, c) \
+    __builtin_choose_expr(( \
+        __builtin_types_compatible_p(typeof(c), void*) || \
+        __builtin_types_compatible_p(typeof(c), Chunk*) || \
+        __builtin_types_compatible_p(typeof(c), ChunkUnkn*) || \
+        __builtin_types_compatible_p(typeof(c), ChunkFree*) || \
+        __builtin_types_compatible_p(typeof(c), ChunkUsed*) \
+        ), (t*)(c), (double)0 )
+
+#define _CHUNK(t, c) \
+    __builtin_choose_expr(( \
+        __builtin_types_compatible_p(typeof(c), void*) || \
+        __builtin_types_compatible_p(typeof(c), Chunk*) || \
+        __builtin_types_compatible_p(typeof(c), ChunkUnkn*) || \
+        __builtin_types_compatible_p(typeof(c), ChunkFree*) || \
+        __builtin_types_compatible_p(typeof(c), ChunkUsed*) \
+        ), (t*)(c), (double)0 )
+
 // STORE
-#define CHUNK(chunk) ((Chunk*)(chunk))
-#define CHUNK_UNKN(chunk) ((ChunkUnknown*)(chunk))
-#define CHUNK_FREE(chunk) ((ChunkFree*)(chunk))
-#define CHUNK_USED(chunk) ((ChunkUsed*)(chunk))
+#define CHUNK(chunk)      __CHUNK(Chunk,     chunk)
+#define CHUNK_UNKN(chunk)  _CHUNK(ChunkUnkn, chunk)
+#define CHUNK_FREE(chunk)  _CHUNK(ChunkFree, chunk)
+#define CHUNK_USED(chunk)  _CHUNK(ChunkUsed, chunk)
 
 //
 #define CHUNK_IS_FREE(chunk) (CHUNK_UNKN(chunk)->size & 1ULL)
@@ -43,16 +62,16 @@
 #define CHUNK_RIGHT(chunk, size)  CHUNK((void*)(chunk) + (size))
 
 typedef union Chunk Chunk;
-typedef struct ChunkUnknown ChunkUnknown;
+typedef struct ChunkUnkn ChunkUnkn;
 typedef struct ChunkFree ChunkFree;
 typedef struct ChunkUsed ChunkUsed;
 typedef struct ChunkTail ChunkTail;
 
-struct ChunkUnknown { u64 size; };
+struct ChunkUnkn { u64 size; };
 struct ChunkFree { u64 size; Chunk** ptr; Chunk* next; };
 struct ChunkUsed { u64 size; char data[]; };
 
-union Chunk { ChunkUnknown unknown; ChunkFree free; ChunkUsed used; };
+union Chunk { ChunkUnkn unknown; ChunkFree free; ChunkUsed used; };
 
 struct ChunkTail { u64 size; };
 
