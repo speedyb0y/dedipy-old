@@ -71,11 +71,11 @@ struct ChunkTail { u64 size; };
 //
 #define BUFFER_FD (FD_MAX - 1)
 
-#define BUFFER                ((Buffer*)0x20000000ULL)
-#define BUFFER_HEADS          (BUFFER->heads)
-#define BUFFER_L              (*(u64*)((void*)BUFFER + sizeof(Buffer) +          sizeof(u64)))
-#define BUFFER_CHUNK0        ((Chunk*)((void*)BUFFER + sizeof(Buffer) + sizeof(u64)))
-#define BUFFER_R(size)        (*(u64*)((void*)BUFFER + (size) - sizeof(u64)))
+#define BUFFER ((Buffer*)0x20000000ULL)
+
+#define BUFFER_L          (*(u64*)((void*)BUFFER + sizeof(Buffer)))
+#define BUFFER_CHUNK0    ((Chunk*)((void*)BUFFER + sizeof(Buffer) + sizeof(u64)))
+#define BUFFER_R(size)    (*(u64*)((void*)BUFFER + (size) - sizeof(u64)))
 
 // BASEADO NO TAMANHO TOTAL DO BUFFER
 #define BUFFER_CHUNK0_SIZE(size) ((size) - sizeof(Buffer) - sizeof(u64) - sizeof(u64))
