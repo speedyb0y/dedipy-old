@@ -12,19 +12,18 @@ X_SALT = 1
 X_DIVISOR = 5
 X_LAST = 5
 
-FIRST, SECOND, *_, LAST, LMT = SEQUENCE = [(1 << n) + ((x * (1 << n)) // X_DIVISOR) for n in range(N_START, 1024) for x in range(X_LAST)][:HEADS_N + 1]
+FIRST, *_, LAST = SEQUENCE = [(1 << n) + ((x * (1 << n)) // X_DIVISOR) for n in range(N_START, 1024) for x in range(X_LAST)][:HEADS_N]
 
-print('//', ' '.join(map(str, SEQUENCE)))
-print('')
-print('#define HEADS_N %d' % HEADS_N)
-print('')
-print('#define N_START %d' % N_START)
-print('#define X_DIVISOR %d' % X_DIVISOR)
-print('#define X_SALT %d' % X_SALT)
-print('#define X_LAST %d' % X_LAST)
-print('')
-print('#define FIRST_SIZE  0x%016XULL' % FIRST)
-print('#define SECOND_SIZE 0x%016XULL' % SECOND)
-print('#define LAST_SIZE   0x%016XULL' % LAST)
-print('#define LMT_SIZE    0x%016XULL' % LMT)
-print('')
+print(f'''
+// {" ".join(map(str, SEQUENCE))}
+
+#define HEADS_N {HEADS_N}
+
+#define N_START {N_START}
+#define X_DIVISOR {X_DIVISOR}
+#define X_SALT {X_SALT}
+#define X_LAST {X_LAST}
+
+#define FIRST_SIZE {FIRST}
+#define LAST_SIZE {LAST}
+''')
