@@ -24,6 +24,6 @@ print(f'''
 #define X_SALT {X_SALT}
 #define X_LAST {X_LAST}
 
-#define FIRST_SIZE {FIRST}
-#define LAST_SIZE {LAST}
+#define FIRST_SIZE {FIRST}ULL
+#define LAST_SIZE {LAST}ULL
 ''')
