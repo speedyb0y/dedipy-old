@@ -71,18 +71,6 @@ struct ChunkTail { u64 size; };
 //
 #define BUFFER_FD (FD_MAX - 1)
 
-//
-#define BUFFER_INFO_ID       (((Buffer*)BUFFER)->id)
-#define BUFFER_INFO_N        (((Buffer*)BUFFER)->n)
-#define BUFFER_INFO_GROUP_ID (((Buffer*)BUFFER)->groupID)
-#define BUFFER_INFO_GROUP_N  (((Buffer*)BUFFER)->groupN)
-#define BUFFER_INFO_PID      (((Buffer*)BUFFER)->pid)
-#define BUFFER_INFO_STARTED  (((Buffer*)BUFFER)->started)
-#define BUFFER_INFO_CODE     (((Buffer*)BUFFER)->code)
-#define BUFFER_INFO_CPU      (((Buffer*)BUFFER)->cpu)
-#define BUFFER_INFO_START    (((Buffer*)BUFFER)->start)
-#define BUFFER_INFO_SIZE     (((Buffer*)BUFFER)->size)
-
 #define BUFFER                ((Buffer*)0x20000000ULL)
 #define BUFFER_HEADS          (BUFFER->heads)
 #define BUFFER_L              (*(u64*)((void*)BUFFER + sizeof(Buffer) +          sizeof(u64)))
