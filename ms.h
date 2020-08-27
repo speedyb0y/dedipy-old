@@ -10,10 +10,7 @@
 #define _CHUNK_USED_SIZE(dataSize) (sizeof(ChunkUsed) + ((((u64)(dataSize) + 7ULL) & ~0b111ULL)) + sizeof(ChunkTail))
 
 // O TAMANHO DO CHUNK TEM QUE CABER ELE QUANDO ESTIVER LIVRE
-#define CHUNK_SIZE_FROM_DATA_SIZE(dataSize) ( \
-    _CHUNK_USED_SIZE(dataSize) > CHUNK_SIZE_MIN ? \
-    _CHUNK_USED_SIZE(dataSize) : CHUNK_SIZE_MIN   \
-    )
+#define CHUNK_SIZE_FROM_DATA_SIZE(dataSize) (_CHUNK_USED_SIZE(dataSize) > CHUNK_SIZE_MIN ? _CHUNK_USED_SIZE(dataSize) : CHUNK_SIZE_MIN)
 
 // STORE
 #define CHUNK(chunk) ((Chunk*)(chunk))
