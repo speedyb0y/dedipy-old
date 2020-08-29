@@ -117,63 +117,57 @@ int main (void) {
 
     sid = setsid();
 
-    { // INSTALL THE SIGNAL HANDLER
-        struct sigaction action;
+    // INSTALL THE SIGNAL HANDLER
+    struct sigaction action;
 
-        memset(&action, 0, sizeof(action));
-        action.sa_sigaction = signal_handler;
-        action.sa_flags = SA_SIGINFO;
+    memset(&action, 0, sizeof(action));
+    action.sa_sigaction = signal_handler;
+    action.sa_flags = SA_SIGINFO;
 
-        if (sigaction(SIGTERM,   &action, NULL) ||
-            sigaction(SIGUSR1,   &action, NULL) ||
-            sigaction(SIGUSR2,   &action, NULL) ||
-            sigaction(SIGIO,     &action, NULL) ||
-            sigaction(SIGURG,    &action, NULL) ||
-            sigaction(SIGPIPE,   &action, NULL) ||
-            sigaction(SIGHUP,    &action, NULL) ||
-            sigaction(SIGQUIT,   &action, NULL) ||
-            sigaction(SIGINT,    &action, NULL) ||
-            sigaction(SIGCHLD,   &action, NULL) ||
-            sigaction(SIGALRM,   &action, NULL)
-          ) goto EXIT;
-    }
+    if (sigaction(SIGTERM,   &action, NULL) ||
+        sigaction(SIGUSR1,   &action, NULL) ||
+        sigaction(SIGUSR2,   &action, NULL) ||
+        sigaction(SIGIO,     &action, NULL) ||
+        sigaction(SIGURG,    &action, NULL) ||
+        sigaction(SIGPIPE,   &action, NULL) ||
+        sigaction(SIGHUP,    &action, NULL) ||
+        sigaction(SIGQUIT,   &action, NULL) ||
+        sigaction(SIGINT,    &action, NULL) ||
+        sigaction(SIGCHLD,   &action, NULL) ||
+        sigaction(SIGALRM,   &action, NULL)
+      ) goto EXIT;
 
-    { // FIFO SCHEDULING
-        struct sched_param params;
+    // FIFO SCHEDULING
+    struct sched_param params;
 
-        memset(&params, 0, sizeof(params));
+    memset(&params, 0, sizeof(params));
 
-        params.sched_priority = 1;
+    params.sched_priority = 1;
 
-        if (sched_setscheduler(0, SCHED_FIFO, &params) == -1)
-            goto EXIT;
-    }
+    if (sched_setscheduler(0, SCHED_FIFO, &params) == -1)
+        goto EXIT;
 
-    { // CPU AFFINITY
-        cpu_set_t set;
+    // CPU AFFINITY
+    cpu_set_t set;
 
-        CPU_ZERO(&set);
-        CPU_SET(MASTER_CPU, &set);
+    CPU_ZERO(&set);
+    CPU_SET(MASTER_CPU, &set);
 
-        if (sched_setaffinity(0, sizeof(set), &set))
-            goto EXIT;
-    }
+    if (sched_setaffinity(0, sizeof(set), &set))
+        goto EXIT;
 
-    { // TODO: FIXME: CLOSE STDIN, AND REOPEN AS /DEV/NULL
-
-    }
+    // TODO: FIXME: CLOSE STDIN, AND REOPEN AS /DEV/NULL
 
     // TODO: FIXME: FORK?
 
-    { // SETUP LIMITS
-        const struct rlimit limit = {
-            .rlim_cur = FD_MAX,
-            .rlim_max = FD_MAX,
-            };
+    // SETUP LIMITS
+    const struct rlimit limit = {
+        .rlim_cur = FD_MAX,
+        .rlim_max = FD_MAX,
+        };
 
-        if (setrlimit(RLIMIT_NOFILE, &limit))
-            goto EXIT;
-    }
+    if (setrlimit(RLIMIT_NOFILE, &limit))
+        goto EXIT;
 
     // TODO: FIXME: other limits
 
