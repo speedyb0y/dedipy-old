@@ -12,10 +12,14 @@ X_SALT = 1
 X_DIVISOR = 5
 X_LAST = 5
 
-FIRST, *_, LAST = SEQUENCE = [(1 << n) + ((x * (1 << n)) // X_DIVISOR) for n in range(N_START, 1024) for x in range(X_LAST)][:HEADS_N]
+FIRST, *_, LAST, _ = SEQUENCE = [(1 << n) + ((x * (1 << n)) // X_DIVISOR) for n in range(N_START, 1024) for x in range(X_LAST)][:HEADS_N + 1]
+
+OPEN, CLOSE = '{', '}'
 
 print(f'''
-// {" ".join(map(str, SEQUENCE))}
+#if DEBUG
+static const u64 MYHEADS[] = {OPEN}{"ULL, ".join(map(str, SEQUENCE))}ULL{CLOSE};
+#endif
 
 #define HEADS_N {HEADS_N}
 
