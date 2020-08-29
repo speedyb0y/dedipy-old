@@ -14,7 +14,12 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-#define DBGPRINT(str) write(STDOUT_FILENO, str "\n", sizeof(str))
+#define _LINE(x) #x
+#define LINE(x) _LINE(x)
+
+#define DBGPRINT(str) write(STDOUT_FILENO, __FILE__ ":- " str "\n", sizeof(__FILE__ ":- " str))
+
+#define DBGPRINTF(x, ...) ({ char b[4096]; write(2, b, snprintf(b, sizeof(b), "%20s %-20s %5d " x "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)); })
 
 static inline u64 rdtsc(void) {
     uint lo;
@@ -22,3 +27,7 @@ static inline u64 rdtsc(void) {
     __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
     return ((uint64_t)hi << 32) | lo;
 }
+
+// TODO: FIXME: builtion choose expression -> int 0 / 1
+
+#define ASSERT(condition) ({ if (!(condition)) { write(STDERR_FILENO, "\n" __FILE__ ":" LINE(__LINE__) " ASSERT FAILED: " #condition "\n", sizeof("\n" __FILE__ ":" LINE(__LINE__) " ASSERT FAILED: " #condition "\n")); abort(); } })
