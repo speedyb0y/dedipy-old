@@ -29,10 +29,6 @@
 
 #include "ms.h"
 
-// NOTE: KEEP IT IN SYNC WITH malloc.c
-#define BUFFER ((void*)0x20000000ULL)
-#define BUFF_LMT (BUFFER + BUFF_SIZE)
-
 //
 #define BUFF_PATH "malloc-buffer"
 #define BUFF_SIZE (128*1024*1024) // --> TODO: FIXME: esta variável é usada pelo malloc() para o processo atual; deve usar outra para o total
@@ -290,43 +286,10 @@ int main (void) {
     { // LANÇA TODOS OS PROCESSOS
         Slave* slave = slaves;
 
-#undef BUFFER
-#define BUFFER (BUFFER_ + slave->size)
-        //  BUFFER                       BUFFER + processSize
-        // |___________________________________|
-        // | INFO | HEADS | 0 |    CHUNK   | 0 |
-
-        // INFO
-        SLAVE_INFO_CODE =
-        SLAVE_INFO_CPU =
-        SLAVE_INFO_START =
-        SLAVE_INFO_SIZE =
-
-        // HEADS
-        memset(BUFFER_HEADS, 0, BUFFER_HEADS_SIZE);
-
-        // LEFT AND RIGHT
-        BUFFER_L            = CHUNK_SIZE_USED(0);
-        BUFFER_R(slaveSize) = CHUNK_SIZE_USED(0);
-
-        // THE INITIAL CHUNK
-        const u64 size = BUFFER_CHUNK0_SIZE(slaveSize);
-
-        Chunk** const ptr = head(size);
-
-        *ptr = BUFFER_CHUNK0;
-
-        BUFFER_CHUNK0->free->size = CHUNK_SIZE_FREE(size);
-        BUFFER_CHUNK0->free->ptr = ptr;
-        BUFFER_CHUNK0->free->next = NULL;
-
-#undef BUFFER
-#define BUFFER BUFFER_
-
         do {
+if (slave->id ==0) {
             // TODO: FIXME: limpar os pipes antes de iniciar o processo?
             // TODO: FIXME: A INICIALIZACAO DESTA MEMORIA DEVE SER FEITA AQUI, PARA QUE SUBPROCESSOS TAMBÉM POSSAM TODOS COMPARTILHAR ESTA ALOCACAO DE MEMORIA
-
             const u64 slaveStarted = rdtsc();
 
             const pid_t slavePID = fork();
@@ -334,11 +297,8 @@ int main (void) {
             if (slavePID == -1)
                 return 1;
 
+            // TODO: FIXME: poderia simplesmente usar o cpuid(), ler o header do buffer, e ler num array[cpusN] o offset seguida com um pread()
             if (slavePID == 0) {
-                //
-                if (dup2(SLAVE_GET_FD(slave->id), SELF_GET_FD) != SELF_GET_FD ||
-                    dup2(SLAVE_PUT_FD(slave->id), SELF_PUT_FD) != SELF_PUT_FD)
-                    return 1;
                 // CPU AFFINITY
                 cpu_set_t set;
                 CPU_ZERO(&set);
@@ -346,18 +306,20 @@ int main (void) {
                 if (sched_setaffinity(0, sizeof(set), &set))
                     return 1;
                 //
-                char var[64];
-                snprintf(var, sizeof(var), "SLAVEPARAMS=" "%016llX" "%016llX", (uintll)slave->start, (uintll)slave->size);
+                char var[512];
+                snprintf(var, sizeof(var), "SLAVEPARAMS=" "%02X" "%02X" "%02X" "%02X" "%016llX" "%016llX" "%02X" "%016llX" "%016llX",
+                    (uint)slave->id, (uint)SLAVES_N, (uint)slave->groupID, (uint)slave->groupN, (uintll)slaveStarted, (uintll)slavesCounter, (uint)slave->cpu, (uintll)slave->start, (uintll)slave->size);
                 slave->env[0] = var;
                 // EXECUTE IT
                 execve(slave->path, slave->args, slave->env);
                 return 1;
             }
 
+            //
             slave->pid      = slavePID;
             slave->started  = slaveStarted;
             slave->code     = slavesCounter++;
-
+}
         } while (++slave != SLAVES_LMT);
     }
 
