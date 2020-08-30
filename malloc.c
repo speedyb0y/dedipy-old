@@ -1,6 +1,11 @@
 /*
 
   TODO: FIXME: reduzir o PTR e o NEXT para um u32, múltiplo de 16
+  TODO: FIXME: interceptar signal(), etc. quem captura eles somos nós. e quando possível, executamos a função deles
+  TODO: FIXME: PRECISA DO MSYNC?
+  TODO: FIXME: INTERCEPTAR ABORT()
+  TODO: FIXME: INTERCEPTAR EXIT()
+  TODO: FIXME: INTERCEPTAR _EXIT()
 
 */
 
@@ -48,12 +53,12 @@ static void initialize (void) {
     uintll slaveSize = 0;
 
     // AGORA SIM MAPEIA
-    if (!(sscanf(getenv("SLAVEPARAMS"),
+    if (!(sscanf(getenv("SLAVEPARAMS"), // TODO: FIXME: PEGAR SOMENTE O START E O SIZE; O RESTANTE É INICIALIZADO NO MASTER
         "%02X"    "%02X"   "%02X"         "%02X"        "%016llX"      "%016llX"   "%02X"    "%016llX"     "%016llX",
         &slaveID, &slaveN, &slaveGroupID, &slaveGroupN, &slaveStarted, &slaveCode, &slaveCPU, &slaveStart, &slaveSize) == 9 && slaveStart && slaveSize &&
-        mmap(BUFFER, slaveSize, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_FIXED_NOREPLACE | MAP_SHARED | MAP_LOCKED | MAP_POPULATE, BUFFER_FD, slaveStart) == BUFFER &&
+        mmap(BUFFER_INFO, slaveSize, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_FIXED_NOREPLACE | MAP_SHARED | MAP_LOCKED | MAP_POPULATE, BUFFER_FD, slaveStart) == BUFFER_INFO &&
         slaveCPU == sched_getcpu() &&
-        snprintf(name, sizeof(name), PROGNAME "#%u", (uint)BUFFER->id) &&
+        snprintf(name, sizeof(name), PROGNAME "#%u", (uint)BUFFER_INFO->id) &&
         prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0) == 0
         )) abort();
 
@@ -61,148 +66,140 @@ static void initialize (void) {
     if (close(BUFFER_FD))
         abort();
 
-    //  BUFFER                       BUFFER + processSize
+    // TODO: FIXME: VERIFICAR O PID TB
+
+    //  BUFFER_INFO                       BUFFER_INFO + processSize
     // |___________________________________|
     // | INFO | HEADS | 0 |    CHUNK   | 0 |
 
     // INFO AND HEADS
-    memset(BUFFER, 0, sizeof(Buffer));
+    memset(BUFFER_INFO, 0, sizeof(Buffer));
 
     // INFO
-    BUFFER->id       = slaveID;
-    BUFFER->n        = slaveN;
-    BUFFER->groupID  = slaveGroupID;
-    BUFFER->groupN   = slaveGroupN;
-    BUFFER->cpu      = slaveCPU;
-    BUFFER->reserved = 0;
-    BUFFER->code     = slaveCode;
-    BUFFER->pid      = slavePID;
-    BUFFER->started  = slaveStarted;
-    BUFFER->start    = slaveStart;
-    BUFFER->size     = slaveSize;
+    BUFFER_INFO->id       = slaveID;
+    BUFFER_INFO->n        = slaveN;
+    BUFFER_INFO->groupID  = slaveGroupID;
+    BUFFER_INFO->groupN   = slaveGroupN;
+    BUFFER_INFO->cpu      = slaveCPU;
+    BUFFER_INFO->reserved = 0;
+    BUFFER_INFO->code     = slaveCode;
+    BUFFER_INFO->pid      = slavePID;
+    BUFFER_INFO->started  = slaveStarted;
+    BUFFER_INFO->start    = slaveStart;
+    BUFFER_INFO->size     = slaveSize;
 
     // LEFT AND RIGHT
     BUFFER_L            = BUFFER_LR_VALUE;
     BUFFER_R(slaveSize) = BUFFER_LR_VALUE;
 
     // THE INITIAL CHUNK
-    const u64 size = BUFFER_CHUNK0_SIZE(slaveSize);
+    // É O MAIOR CHUNK QUE PODERÁ SER CRIADO; ENTÃO AQUI CONFIRMA QUE O CHUNK_SIZE_MAX E ROOTS_SIZES_LST SÃO MAIORES DO QUE ELE
+    CHUNK_FREE_FILL_AND_REGISTER(BUFFER_CHUNK0, BUFFER_CHUNK0_SIZE(slaveSize));
 
-    void* const chunk = BUFFER_CHUNK0;
+    // TODO: FIXME: tentar dar malloc() e realloc() com valores bem grandes, acima desses limies, e confirmar que deu NULL
+    // CHUNK_SIZE_MAX
+    // ROOTS_SIZES_LST
+    // ROOTS_SIZES_LMT
 
-    CHUNK_FREE_ST_SIZE (chunk, size);
-    CHUNK_FREE_ST_PTR  (chunk, CHOOSE_HEAD_PTR(size));
-   *CHUNK_FREE_LD_PTR  (chunk) = chunk;
-    CHUNK_FREE_ST_NEXT (chunk, NULL);
-    CHUNK_FREE_ST_SIZE2(chunk, size);
+    DBGPRINTF("ROOTS_N %llu", (uintll)ROOTS_N);
+    DBGPRINTF("ROOTS_SIZES_FST %llu", (uintll)ROOTS_SIZES_FST);
+    DBGPRINTF("ROOTS_SIZES_LST %llu", (uintll)ROOTS_SIZES_LST);
+    DBGPRINTF("ROOTS_SIZES_LMT %llu", (uintll)ROOTS_SIZES_LMT);
 
-    DBGPRINTF("BUFFER_HEADS_N %llu", (uintll)HEADS_N);
+    DBGPRINTF("CHUNK_SIZE_MIN %llu", (uintll)CHUNK_SIZE_MIN);
+    DBGPRINTF("CHUNK_SIZE_MAX %llu", (uintll)CHUNK_SIZE_MAX);
 
-    DBGPRINTF("BUFFER %llu", ADDR(BUFFER));
-    DBGPRINTF("BUFFER->id %llu", (uintll)BUFFER->id);
-    DBGPRINTF("BUFFER->pid %llu", (uintll)BUFFER->pid);
-    DBGPRINTF("BUFFER->cpu %llu", (uintll)BUFFER->cpu);
-    DBGPRINTF("BUFFER->start %llu", (uintll)BUFFER->start);
-    DBGPRINTF("BUFFER->size %llu", (uintll)BUFFER->size);
-    DBGPRINTF("BUFFER->code %llu", (uintll)BUFFER->code);
-    DBGPRINTF("BUFFER->heads %llu BUFFER+%llu", ADDR(BUFFER->heads), BOFFSET(BUFFER->heads));
-    DBGPRINTF("BUFFER_HEADS_LMT %llu BUFFER+%llu", ADDR(BUFFER_HEADS_LMT), BOFFSET(BUFFER_HEADS_LMT));
+    ASSERT (CHUNK_SIZE_MIN == ROOTS_SIZES_FST);
+    ASSERT (CHUNK_SIZE_MAX <= ROOTS_SIZES_LST);
+    ASSERT (CHUNK_SIZE_MAX <  ROOTS_SIZES_LMT);
 
-    DBGPRINTF(" BUFFER_L %llu", (uintll)BUFFER_L);
-    DBGPRINTF("&BUFFER_L %llu BUFFER+%llu", ADDR(&BUFFER_L), BOFFSET(&BUFFER_L));
+    ASSERT (ROOTS_SIZES_FST < ROOTS_SIZES_LST);
+    ASSERT (ROOTS_SIZES_LST < ROOTS_SIZES_LMT);
 
-    DBGPRINTF(" BUFFER_CHUNK0 %llu BUFFER+%llu", ADDR(BUFFER_CHUNK0), BOFFSET(BUFFER_CHUNK0));
-    DBGPRINTF(" BUFFER_CHUNK0->size %llu", (uintll)(CHUNK_FREE_LD_SIZE(BUFFER_CHUNK0)));
-    DBGPRINTF(" BUFFER_CHUNK0->ptr %llu BUFFER+%llu",  ADDR( CHUNK_FREE_LD_PTR (BUFFER_CHUNK0)), BOFFSET( CHUNK_FREE_LD_PTR (BUFFER_CHUNK0)));
-    DBGPRINTF("*BUFFER_CHUNK0->ptr %llu BUFFER+%llu",  ADDR(*CHUNK_FREE_LD_PTR (BUFFER_CHUNK0)), BOFFSET(*CHUNK_FREE_LD_PTR (BUFFER_CHUNK0)));
-    DBGPRINTF(" BUFFER_CHUNK0->next %llu BUFFER+%llu", ADDR( CHUNK_FREE_LD_NEXT(BUFFER_CHUNK0)), BOFFSET( CHUNK_FREE_LD_NEXT(BUFFER_CHUNK0)));
+    ASSERT (CHUNK_PTR_ROOT_GET(CHUNK_SIZE_MIN) == (BUFFER_ROOTS));
+    ASSERT (CHUNK_PTR_ROOT_GET(CHUNK_SIZE_MAX) == (BUFFER_ROOTS + (ROOTS_N - 1)));
 
-    DBGPRINTF(" BUFFER_R %llu", (uintll)BUFFER_R(BUFFER->size));
-    DBGPRINTF("&BUFFER_R %llu &BUFFER+%llu", ADDR(&BUFFER_R(BUFFER->size)), BOFFSET(&BUFFER_R(BUFFER->size)));
+    ASSERT (CHUNK_PTR_ROOT_PUT(CHUNK_SIZE_MIN) == (BUFFER_ROOTS));
+    ASSERT (CHUNK_PTR_ROOT_PUT(CHUNK_SIZE_MAX) <= (BUFFER_ROOTS + (ROOTS_N - 1))); // COMO VAI ARREDONDAR PARA BAIXO, PEDIR O MÁXIMO PODE CAIR LOGO ANTES DO ÚLTIMO SLOT
 
-    DBGPRINTF("BUFFER_LMT %llu BUFFER+%llu", ADDR(BUFFER_LMT), BOFFSET(BUFFER_LMT));
+    ASSERT (BUFFER_ROOTS_LMT == (BUFFER_ROOTS + ROOTS_N));
 
-    DBGPRINTF(" chunk %llu BUFFER+%llu", ADDR(chunk), BOFFSET(chunk));
-    DBGPRINTF(" chunk->size %llu", (uintll)CHUNK_FREE_LD_SIZE(chunk));
-    DBGPRINTF(" chunk->ptr %llu BUFFER+%llu",  ADDR( CHUNK_FREE_LD_PTR (chunk)), BOFFSET( CHUNK_FREE_LD_PTR (chunk)));
-    DBGPRINTF("*chunk->ptr %llu BUFFER+%llu",  ADDR(*CHUNK_FREE_LD_PTR (chunk)), BOFFSET(*CHUNK_FREE_LD_PTR (chunk)));
-    DBGPRINTF(" chunk->next %llu BUFFER+%llu", ADDR( CHUNK_FREE_LD_NEXT(chunk)), BOFFSET( CHUNK_FREE_LD_NEXT(chunk)));
+    DBGPRINTF("BUFFER_INFO BX%llX",      BOFFSET(BUFFER_INFO));
+    DBGPRINTF("BUFFER_INFO->id %llu",    (uintll)BUFFER_INFO->id);
+    DBGPRINTF("BUFFER_INFO->pid %llu",   (uintll)BUFFER_INFO->pid);
+    DBGPRINTF("BUFFER_INFO->cpu %llu",   (uintll)BUFFER_INFO->cpu);
+    DBGPRINTF("BUFFER_INFO->start %llu", (uintll)BUFFER_INFO->start);
+    DBGPRINTF("BUFFER_INFO->size %llu",  (uintll)BUFFER_INFO->size);
+    DBGPRINTF("BUFFER_INFO->code %llu",  (uintll)BUFFER_INFO->code);
+
+    DBGPRINTF("BUFFER_ROOTS BX%llX",     BOFFSET(BUFFER_ROOTS));
+    DBGPRINTF("BUFFER_ROOTS_LMT BX%llX", BOFFSET(BUFFER_ROOTS_LMT));
+
+    DBGPRINTF(" BUFFER_L %llu",    (uintll)BUFFER_L);
+    DBGPRINTF("&BUFFER_L BX%llX", BOFFSET(&BUFFER_L));
+
+    DBGPRINTF(" BUFFER_CHUNK0 BX%llX", BOFFSET(BUFFER_CHUNK0));
+    DBGPRINTF(" BUFFER_CHUNK0 SIZE %llu",   (uintll)(CHUNK_FREE_LD_SIZE(BUFFER_CHUNK0)));
+    DBGPRINTF(" BUFFER_CHUNK0 PTR BX%llX",  BOFFSET( CHUNK_FREE_LD_PTR (BUFFER_CHUNK0)));
+    DBGPRINTF("*BUFFER_CHUNK0 PTR BX%llX",  BOFFSET(*CHUNK_FREE_LD_PTR (BUFFER_CHUNK0)));
+    DBGPRINTF(" BUFFER_CHUNK0 NEXT BX%llX", BOFFSET( CHUNK_FREE_LD_NEXT(BUFFER_CHUNK0)));
+
+    DBGPRINTF(" BUFFER_R %llu",    (uintll)BUFFER_R(BUFFER_INFO->size));
+    DBGPRINTF("&BUFFER_R BX%llX", BOFFSET(&BUFFER_R(BUFFER_INFO->size)));
+
+    DBGPRINTF("BUFFER_LMT BX%llX", BOFFSET(BUFFER_LMT));
 
     DBGPRINTF("---");
 
-    ASSERT_ADDR_IN_BUFFER(chunk);
-    ASSERT_ADDR_IN_CHUNKS(chunk);
-
-    ASSERT ( BUFFER_L               == BUFFER_LR_VALUE );
-    ASSERT ( BUFFER_R(BUFFER->size) == BUFFER_LR_VALUE );
-    ASSERT( ((void*)BUFFER + BUFFER->size) == BUFFER_LMT );
+    ASSERT_ADDR_IN_BUFFER(BUFFER_CHUNK0);
+    ASSERT_ADDR_IN_CHUNKS(BUFFER_CHUNK0);
 
     ASSERT ( sizeof(u64) == 8 );
     ASSERT ( sizeof(void*) == 8 );
-    ASSERT ( (void*)&BUFFER->heads[HEADS_N] == ((void*)BUFFER + sizeof(Buffer)) );
+
+    CHUNKS_VERIFY();
 
     //
-    if (dup2(SLAVE_GET_FD(BUFFER->id), SELF_GET_FD) != SELF_GET_FD ||
-        dup2(SLAVE_PUT_FD(BUFFER->id), SELF_PUT_FD) != SELF_PUT_FD)
+    if (dup2(SLAVE_GET_FD(BUFFER_INFO->id), SELF_GET_FD) != SELF_GET_FD ||
+        dup2(SLAVE_PUT_FD(BUFFER_INFO->id), SELF_PUT_FD) != SELF_PUT_FD)
         abort();
+
+    // TODO: FIXME: o malloc também tem que ser inicializado no master
 }
 
 void free (void* const data) {
 
-    DBGPRINTF("");
-    DBGPRINTF("FREE(%llu BUFFER+%llu)", ADDR(data), BOFFSET(data));
+    DBGPRINTF("=== FREE(BX%llX) ========================================================================", BOFFSET(data));
+
+    CHUNKS_VERIFY();
 
     if (data) {
         // VAI PARA O COMEÇO DO CHUNK
         void* chunk = CHUNK_USED_FROM_DATA(data);
 
-        DBGPRINTF("WILL FREE CHUNK %llu BUFFER+%llu | SIZE %llu | IS FREE %d", ADDR(chunk), BOFFSET(chunk), (uintll)CHUNK_UNKN_LD_SIZE(chunk), !!CHUNK_UNKN_IS_FREE(chunk));
-
         ASSERT(CHUNK_UNKN_IS_FREE(chunk) == 0);
 
-        u64 size = CHUNK_UNKN_LD_SIZE(chunk);
+        u64 size = CHUNK_USED_LD_SIZE(chunk);
 
         // JOIN WITH THE LEFT CHUNK
         void* const left = CHUNK_LEFT(chunk);
 
-        DBGPRINTF("LEFT CHUNK %llu BUFFER+%llu", ADDR(left), BOFFSET(left));
-
-        if (CHUNK_UNKN_IS_FREE_AND_NOT_LR(left)) {
-            DBGPRINTF("LEFT CHUNK %llu BUFFER+%llu | SIZE %llu | IS FREE %d", ADDR(left), BOFFSET(left), (uintll)CHUNK_UNKN_LD_SIZE(left), !!CHUNK_UNKN_IS_FREE(left));
-            DBGPRINTF("LEFT JOINING");
+        if (CHUNK_UNKN_IS_FREE(left)) {
             size += CHUNK_FREE_LD_SIZE(left);
-            if (CHUNK_FREE_LD_NEXT(left))
-                CHUNK_FREE_ST_PTR(CHUNK_FREE_LD_NEXT(left), CHUNK_FREE_LD_PTR(left));
-           *CHUNK_FREE_LD_PTR(left) = CHUNK_FREE_LD_NEXT(left);
             chunk = left;
+            CHUNK_FREE_REMOVE(chunk);
         }
 
         // JOIN WITH THE RIGHT CHUNK
         void* const right = CHUNK_RIGHT(chunk, size);
 
-        DBGPRINTF("RIGHT CHUNK %llu BUFFER+%llu", ADDR(right), BOFFSET(right));
-
-        if (CHUNK_UNKN_IS_FREE_AND_NOT_LR(right)) {
-            DBGPRINTF("RIGHT CHUNK %llu BUFFER+%llu | SIZE %llu | IS FREE %d", ADDR(right), BOFFSET(right), (uintll)CHUNK_UNKN_LD_SIZE(right), !!CHUNK_UNKN_IS_FREE(right));
-            DBGPRINTF("RIGHT JOINING");
+        if (CHUNK_UNKN_IS_FREE(right)) {
             size += CHUNK_FREE_LD_SIZE(right);
-            if (CHUNK_FREE_LD_NEXT(right))
-                CHUNK_FREE_ST_PTR(CHUNK_FREE_LD_NEXT(right), CHUNK_FREE_LD_PTR(right));
-           *CHUNK_FREE_LD_PTR(right) = CHUNK_FREE_LD_NEXT(right);
+            CHUNK_FREE_REMOVE(right);
         }
 
-        DBGPRINTF("JOINED; CHUNK %llu BUFFER+%llu SIZE %llu", ADDR(chunk), BOFFSET(chunk), (uintll)size);
-
-        // WRITE THE SIZE
-        CHUNK_FREE_ST_SIZE (chunk, size); // INSERE ELE NA LISTA DE FREES
-        CHUNK_FREE_ST_SIZE2(chunk, size); void** const ptr = CHOOSE_HEAD_PTR(size);
-        CHUNK_FREE_ST_PTR  (chunk,  ptr);
-        CHUNK_FREE_ST_NEXT (chunk, *ptr);
-
-        if (*ptr)
-           CHUNK_FREE_ST_PTR(*ptr, CHUNK_FREE_LD_NEXT_(chunk));
-
-        *ptr = chunk;
+        //
+        CHUNK_FREE_FILL_AND_REGISTER(chunk, size);
     }
 }
 
@@ -211,13 +208,12 @@ void* malloc (size_t size_) {
     if (__builtin_expect_with_probability(initialized, 1, 0.99) == 0)
         initialize();
 
-    DBGPRINTF("");
-    DBGPRINTF("MALLOC(%llu)", (uintll)size_);
+    DBGPRINTF("=== MALLOC(%llu) ========================================================================", (uintll)size_);
+
+    CHUNKS_VERIFY();
 
     // CONSIDERA O CHUNK INTEIRO, E O ALINHA
     u64 size = CHUNK_SIZE_FROM_DATA_SIZE(size_);
-
-    DBGPRINTF("MALLOC - CHUNK SIZE REQUESTED %llu", (uintll)size);
 
     //
     if (size > CHUNK_SIZE_MAX)
@@ -227,68 +223,45 @@ void* malloc (size_t size_) {
     void* used;
 
     // ENCONTRA A PRIMEIRA LISTA LIVRE
-    void** ptr = CHOOSE_HEAD_PTR(size);
-
-    DBGPRINTF("MALLOC - ptr BUFFER->heads[#%llu] %llu BUFFER+%llu", (uintll)(ptr - BUFFER->heads), ADDR(ptr), BOFFSET(ptr));
+    void** ptr = CHUNK_PTR_ROOT_GET(size);
 
     // LOGO APÓS O HEADS, HÁ O LEFT CHUNK, COM UM SIZE FAKE 1, PORTANTO ELE É NÃO-NULL, E VAI PARAR SE NAO TIVER MAIS CHUNKS LIVRES
     while ((used = *ptr) == NULL)
         ptr++;
 
-    DBGPRINTF("MALLOC - ptr BUFFER->heads[#%llu] %llu BUFFER+%llu", (uintll)(ptr - BUFFER->heads), ADDR(ptr), BOFFSET(ptr));
-    DBGPRINTF("MALLOC - *ptr %llu BUFFER+%llu", ADDR(*ptr), BOFFSET(*ptr));
-
     // SE
-    if (ptr == BUFFER_HEADS_LMT) {
-        DBGPRINTF("MALLOC - NO AVAILABLE CHUNK WITH THIS SIZE");
+    if (ptr == BUFFER_ROOTS_LMT) {
         ASSERT ( used == (void*)BUFFER_LR_VALUE ); // TERÁ LIDO DESTA FORMA
         return NULL;
     }
 
-    DBGPRINTF("USANDO O FREE CHUNK %llu BUFFER+%llu | SIZE %llu | IS FREE %d", ADDR(used), BOFFSET(used), (uintll)CHUNK_UNKN_LD_SIZE(used), !!CHUNK_UNKN_IS_FREE(used));
-
-    DBGPRINTF("CHUNK_FREE_LD_SIZE(used) = %llu", (uintll)CHUNK_FREE_LD_SIZE(used));
-    DBGPRINTF("CHUNK_FREE_LD_SIZE2(used, ) = %llu", (uintll)CHUNK_FREE_LD_SIZE2(used, CHUNK_FREE_LD_SIZE(used)));
-
-    ASSERT(BUFFER->heads <= ptr && ptr < BUFFER_HEADS_LMT); DBGPRINTF(":/");
-    ASSERT_ADDR_IN_BUFFER (ptr);
-    ASSERT(CHUNK_UNKN_IS_FREE(used)); DBGPRINTF(":/");
-    ASSERT( CHUNK_FREE_LD_SIZE(used) == CHUNK_FREE_LD_SIZE2(used, CHUNK_FREE_LD_SIZE(used))); DBGPRINTF(":/");
-    ASSERT(*CHUNK_FREE_LD_PTR (used) == used);
+    ASSERT(BUFFER_ROOTS <= ptr && ptr < BUFFER_ROOTS_LMT);
+    ASSERT(CHUNK_UNKN_IS_FREE(used));
     //ASSERT(CHUNK_FREE(used)->next == NULL || CHUNK_FREE((CHUNK_FREE(used)->next))->ptr == &CHUNK_FREE(used)->next);
     ASSERT(CHUNK_SIZE_MIN <= CHUNK_FREE_LD_SIZE(used) && CHUNK_FREE_LD_SIZE(used) <= CHUNK_SIZE_MAX && (CHUNK_FREE_LD_SIZE(used) % 8) == 0);
-    ASSERT_ADDR_IN_CHUNKS(used);
-    ASSERT_ADDR_IN_BUFFER(CHUNK_FREE_LD_PTR(used));
+
     //ASSERT_ADDR_IN_CHUNKS(CHUNK_FREE(used)->next);
 
     // TAMANHO DESTE CHUNK FREE
     u64 usedSize = CHUNK_FREE_LD_SIZE(used);
 
-    DBGPRINTF("ESTE CHUNK LIVRE TEM TAMANHO %llu", (uintll)usedSize);
-
     // TAMANHO QUE ELE FICARIA AO RETIRAR O CHUNK
     const u64 freeSizeNew = usedSize - size;
 
-    DBGPRINTF("SE TIRAR %llu ELE FICARIA COM %llu", (uintll)size, (uintll)freeSizeNew);
+    // REMOVE ELE DE SUA LISTA, MESMO QUE SÓ PEGUEMOS UM PEDAÇO, VAI TER REALOCÁ-LO NA TREE
+    CHUNK_FREE_REMOVE(used);
 
+    // SE DER, CONSOME SÓ UMA PARTE, NO FINAL DELE
     if (CHUNK_SIZE_MIN <= freeSizeNew) {
-        // CONSOME UMA PARTE, NO FINAL DELE
-        CHUNK_FREE_ST_SIZE (used, freeSizeNew);
-        CHUNK_FREE_ST_SIZE2(used, freeSizeNew);
-        DBGPRINTF("CONSUMIU O FINAL; DEIXOU O FREE COMO CHUNK %llu BUFFER+%llu | SIZE %llu / %llu | IS FREE %d", ADDR(used), BOFFSET(used), (uintll)CHUNK_FREE_LD_SIZE(used), (uintll)CHUNK_FREE_LD_SIZE2(used, freeSizeNew), !!CHUNK_UNKN_IS_FREE(used));
-        used = CHUNK_RIGHT(used, freeSizeNew);
+        CHUNK_FREE_FILL_AND_REGISTER(used, freeSizeNew);
+        used += freeSizeNew;
         usedSize = size;
-    } else { // CONSOME ELE: REMOVE ELE DE SUA LISTA
-        if (CHUNK_FREE_LD_NEXT(used))
-            CHUNK_FREE_ST_PTR(CHUNK_FREE_LD_NEXT(used), CHUNK_FREE_LD_PTR(used));
-        *CHUNK_FREE_LD_PTR(used) = CHUNK_FREE_LD_NEXT(used);
-        DBGPRINTF("CONSUMIU O FREE INTEIRO; USANDO ELE");
     }
+
+    CLEAR_CHUNK(used, usedSize);
 
     CHUNK_USED_ST_SIZE (used, usedSize);
     CHUNK_USED_ST_SIZE2(used, usedSize);
-
-    DBGPRINTF("ALOCOU CHUNK %llu BUFFER+%llu | SIZE %llu IS FREE %d", ADDR(used), BOFFSET(used), (uintll)CHUNK_USED_LD_SIZE(used), !!CHUNK_UNKN_IS_FREE(used));
 
     return CHUNK_USED_DATA(used);
 }
@@ -297,7 +270,7 @@ void* malloc (size_t size_) {
 // If the multiplication of nmemb and size would result in integer overflow, then calloc() returns an error.
 void* calloc (size_t n, size_t size_) {
 
-    DBGPRINT("MALLOC - CALLOC");
+    DBGPRINTF2("MALLOC - CALLOC");
 
     const u64 size = (u64)n * (u64)size_;
 
@@ -317,23 +290,29 @@ void* calloc (size_t n, size_t size_) {
 // If realloc() fails, the original block is left untouched; it is not freed or moved.
 void* realloc (void* const data_, const size_t dataSizeNew_) {
 
-    DBGPRINT("MALLOC - REALLOC");
+    DBGPRINTF("=== REALLOC(BX%llX, %llu) ========================================================================", BOFFSET(data_), (uintll)dataSizeNew_);
+
+    CHUNKS_VERIFY();
 
     if (data_ == NULL)
         return malloc(dataSizeNew_);
 
-    // CONSIDERA O CHUNK INTEIRO, E O ALINHA
-    u64 sizeNew = CHUNK_SIZE_FROM_DATA_SIZE(dataSizeNew_);
-
     // FOI NOS PASSADO O DATA; VAI PARA O CHUNK
     void* const chunk = CHUNK_USED_FROM_DATA(data_);
+
+    ASSERT(!CHUNK_UNKN_IS_FREE(chunk));
+
+    // CONSIDERA O CHUNK INTEIRO, E O ALINHA
+    u64 sizeNew = CHUNK_SIZE_FROM_DATA_SIZE(dataSizeNew_);
 
     //
     u64 size = CHUNK_USED_LD_SIZE(chunk);
 
+    DBGPRINTF("WILL REALLOC CHUNK BX%llX SIZE %llu -> %llu", BOFFSET(chunk), (uintll)size, (uintll)sizeNew);
+
     if (size >= sizeNew) {
         // ELE SE AUTOFORNECE
-        if ((size - sizeNew) < 265)
+        if ((size - sizeNew) < 64)
             // MAS NÃO VALE A PENA DIMINUIR
             return data_;
         // TODO: FIXME: SE FOR PARA DIMINUIR, DIMINUI!!!
@@ -343,7 +322,9 @@ void* realloc (void* const data_, const size_t dataSizeNew_) {
     void* right = CHUNK_RIGHT(chunk, size);
 
     // SÓ SE FOR FREE E SUFICIENTE
-    if (CHUNK_UNKN_IS_FREE_AND_NOT_LR(right)) {
+    if (CHUNK_UNKN_IS_FREE(right)) {
+
+        DBGPRINTF("RIGHT CHUNK BX%llX IS FREE", BOFFSET(right));
 
         const u64 rightSize = CHUNK_FREE_LD_SIZE(right);
         // O QUANTO VAMOS TENTAR RETIRAR DA DIREITA
@@ -354,39 +335,35 @@ void* realloc (void* const data_, const size_t dataSizeNew_) {
 
             // O TAMANHO NOVO DA DIREITA
             const u64 rightSizeNew = rightSize - sizeNeeded;
+            DBGPRINTF("UA UAU UAU");
+
+            // REMOVE ELE DE SUA LISTA
+            CHUNK_FREE_REMOVE(right);
 
             if (rightSizeNew >= CHUNK_SIZE_MIN) {
                 // PEGA ESTE PEDAÇO DELE, PELA ESQUERDA
-                size += sizeNeeded;
-                // LEMBRA QUAIS ERAM
-                void** const ptr  = CHUNK_FREE_LD_PTR (right);
-                void*  const next = CHUNK_FREE_LD_NEXT(right);
+                size += sizeNeeded; // size -> sizeNew
                 // MOVE O COMEÇO PARA A DIREITA
                 right += sizeNeeded;
                 // REESCREVE
-                CHUNK_FREE_ST_SIZE (right, rightSizeNew);
-                CHUNK_FREE_ST_PTR  (right, ptr);
-                CHUNK_FREE_ST_NEXT (right, next);
-                CHUNK_FREE_ST_SIZE2(right, rightSizeNew);
-                // RELINKA
-                if (CHUNK_FREE_LD_NEXT(right))
-                    CHUNK_FREE_ST_PTR(CHUNK_FREE_LD_NEXT(right), CHUNK_FREE_LD_NEXT_(right));
-                *CHUNK_FREE_LD_PTR(right) = right;
+                CHUNK_FREE_FILL_AND_REGISTER(right, rightSizeNew);
+                DBGPRINTF("RIGHT CONSUMED PARTIALLY; RIGHT CHUNK BX%llX SIZE %llu PTR BX%llX NEXT BX%llX", BOFFSET(right), (uintll)CHUNK_FREE_LD_SIZE(right), BOFFSET(CHUNK_FREE_LD_PTR(right)), BOFFSET(CHUNK_FREE_LD_NEXT(right)));
             } else { // CONSOME ELE POR INTEIRO
-                size += rightSize;
-                // REMOVE ELE DE SUA LISTA
-                if (CHUNK_FREE_LD_NEXT(right))
-                    CHUNK_FREE_ST_PTR(CHUNK_FREE_LD_NEXT(right), CHUNK_FREE_LD_PTR(right));
-                *CHUNK_FREE_LD_PTR(right) = CHUNK_FREE_LD_NEXT(right);
+                size += rightSize; // size -> o que ja era + o free chunk
+                DBGPRINTF("RIGHT CONSUMED ENTIRELY");
             }
 
-            // REESCREVE ELE
+            // ESCREVE ELE
             CHUNK_USED_ST_SIZE (chunk, size);
             CHUNK_USED_ST_SIZE2(chunk, size);
+
+            DBGPRINTF("RETURNING CHUNK BX%llX SIZE %llu DATA BX%llX", BOFFSET(chunk), (uintll)CHUNK_USED_LD_SIZE(chunk), BOFFSET(CHUNK_USED_DATA(chunk)));
 
             return CHUNK_USED_DATA(chunk);
         }
     }
+
+    DBGPRINTF("RIGHT CHUNK BX%llX NOT USED; ALLOCATING A NEW ONE", BOFFSET(right));
 
     // NAO TEM ESPAÇO NA DIREITA; ALOCA UM NOVO
     void* const data = malloc(dataSizeNew_);
@@ -394,10 +371,17 @@ void* realloc (void* const data_, const size_t dataSizeNew_) {
     if (data) {
         // CONSEGUIU
         // COPIA DO CHUNK ORIGINAL
+        DBGPRINTF("COPYING DATA SIZE %llu BX%llX TO BX%llX", (uintll)CHUNK_USED_DATA_SIZE(size), BOFFSET(data_), BOFFSET(data));
         memcpy(data, data_, CHUNK_USED_DATA_SIZE(size));
         // LIBERA O CHUNK ORIGINAL
-        free(chunk);
+        free(CHUNK_USED_DATA(chunk));
+
+        DBGPRINTF("RETURNING CHUNK BX%llX SIZE %llu DATA BX%llX", BOFFSET(CHUNK_USED_FROM_DATA(data)), (uintll)CHUNK_USED_LD_SIZE(CHUNK_USED_FROM_DATA(data)), BOFFSET(CHUNK_USED_DATA(CHUNK_USED_FROM_DATA(data))));
+
+        ASSERT(CHUNK_USED_DATA(CHUNK_USED_FROM_DATA(data)) == data);
     }
+
+    DBGPRINTF("RETURNING DATA BX%llX", BOFFSET(data));
 
     return data;
 }
@@ -423,9 +407,6 @@ int syncfs (int fd) {
     return 0;
 }
 
-
-// POR QUE PRECISA DO MSYNC???
-
 //  começa depois disso
 //   usar = sizeof(Buffer) + 8 + BUFF->mallocSize + 8;
 // le todos os seus de /proc/self/maps
@@ -435,5 +416,3 @@ int syncfs (int fd) {
 //   agora remapeia
 //      mmap(ORIGINALADDR, ORIGINALSIZE, prot, flags, BUFFER_FD, usar);
 //      usar += ORIGINALSIZE;
-
-// TODO: FIXME: TODA VEZ QUE FOR VER O LEFT()/RIGHT(), TOMAR CUIDADO POIS PODE SER O LR
