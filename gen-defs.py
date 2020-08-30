@@ -3,7 +3,7 @@
 ### O HUGEPAGE é PROCESSES[(offset, size),] |PROCESS0|PROCESS2|
 ####  TODO: FIXME: ja executar ele rodando como root, scheduling e cpu
 
-HEADS_N = 128
+ROOTS_N = 200
 
 N_START = 5
 
@@ -12,22 +12,28 @@ X_SALT = 1
 X_DIVISOR = 5
 X_LAST = 5
 
-FIRST, *_, LAST, _ = SEQUENCE = [(1 << n) + ((x * (1 << n)) // X_DIVISOR) for n in range(N_START, 1024) for x in range(X_LAST)][:HEADS_N + 1]
+FST, *_, LST, LMT = SEQUENCE = [(1 << n) + ((x * (1 << n)) // X_DIVISOR) for n in range(N_START, 1024) for x in range(X_LAST)][:ROOTS_N + 1]
+
+# É O LST, ARREDONDADO PARA BAIXO
+CHUNK_SIZE_MAX = LST - (LST % 8)
 
 OPEN, CLOSE = '{', '}'
 
+_S = '{' + ','.join(('0x%XULL' % s for s in SEQUENCE)) + '}'
+
 print(f'''
-#if DEBUG
-static const u64 MYHEADS[] = {OPEN}{"ULL, ".join(map(str, SEQUENCE))}ULL{CLOSE};
-#endif
-
-#define HEADS_N {HEADS_N}
-
 #define N_START {N_START}
 #define X_DIVISOR {X_DIVISOR}
 #define X_SALT {X_SALT}
 #define X_LAST {X_LAST}
 
-#define FIRST_SIZE {FIRST}ULL
-#define LAST_SIZE {LAST}ULL
+#define ROOTS_N {ROOTS_N}
+
+#define ROOTS_SIZES_FST {FST}ULL
+#define ROOTS_SIZES_LST {LST}ULL
+#define ROOTS_SIZES_LMT {LMT}ULL
+
+static const u64 ROOTS_SIZES[] = {_S};
+
+#define CHUNK_SIZE_MAX {CHUNK_SIZE_MAX}ULL
 ''')
