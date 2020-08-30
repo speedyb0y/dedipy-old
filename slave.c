@@ -64,25 +64,18 @@ int main (int argsN, char* args[]) {
             void** new;
 
             while ((new = malloc(sizeof(void**) + RSIZE(c)))) {
-
                 if (RANDOM(c) % 10 == 0)
                     new = realloc(new, RSIZE(c)) ?: new;
-
                 // TODO: FIXME: uma porcentagem, dar free() aqui ao invés de incluir na lista
-
                 *new = last;
                 last = new;
             }
 
             while (last) {
-
                 if (RANDOM(c) % 10 == 0)
                     last = realloc(last, RSIZE(c)) ?: last;
-
                 void** old = *last;
-
                 free(last);
-
                 last = old;
             }
         }
