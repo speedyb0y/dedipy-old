@@ -97,8 +97,6 @@ int main (int argsN, char* args[]) {
         }
     }
 
-    DBGPRINTF("SLAVE[%u] - EXITING", slaveID);
-
     DBGPRINTF("SLAVE[%u] - RECEIVING SELF", slaveID);
 
     char received[65536];
@@ -108,6 +106,8 @@ int main (int argsN, char* args[]) {
     DBGPRINTF("SLAVE[%u] - RECEIVED %u BYTES:", slaveID, receivedSize);
 
     write(STDOUT_FILENO, received, receivedSize);
+
+    DBGPRINTF("SLAVE[%u] - EXITING", slaveID);
 
     return 0;
 }
