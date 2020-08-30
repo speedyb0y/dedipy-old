@@ -65,11 +65,8 @@ int main (int argsN, char* args[]) {
 
             while ((new = malloc(sizeof(void**) + (RANDOM(counter) % ((counter % 3 == 0) ? 0xFFFFFULL : 0xFFFULL))))) {
 
-                if ((rdtsc() + counter) % 10 == 0) {
-                    void** const new_ = realloc(new, rdtsc() % 65536);
-                    if (new_)
-                        new = new_;
-                }
+                if ((rdtsc() + counter) % 10 == 0)
+                    new = realloc(new, rdtsc() % 65536) ?: new;
 
                 // TODO: FIXME: uma porcentagem, dar free() aqui ao invés de incluir na lista
 
@@ -79,11 +76,8 @@ int main (int argsN, char* args[]) {
 
             while (last) {
 
-                if ((rdtsc() + counter) % 15 == 0) {
-                    void** const last_ = realloc(last, rdtsc() % 65536);
-                    if (last_)
-                        last = last_;
-                }
+                if ((rdtsc() + counter) % 10 == 0)
+                    last = realloc(last, rdtsc() % 65536) ?: last;
 
                 void** old = *last;
 
