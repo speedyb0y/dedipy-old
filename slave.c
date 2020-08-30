@@ -26,7 +26,6 @@ static inline u64 RANDOM (const u64 x) {
     return _rand;
 }
 
-// TODO: FIXME: mais regras
 static inline u64 RSIZE(const u64 x) {
 
     const u64 r = RANDOM(x);
