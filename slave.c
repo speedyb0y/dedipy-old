@@ -1,5 +1,5 @@
 /*
-
+    TODO: FIXME: TESTAR COM VÁRIAS THREADS/FORKS: SLAVE[slaveID:subProcessID]
 */
 
 #include <stdint.h>
@@ -29,9 +29,9 @@ int main (int argsN, char* args[]) {
     if (argsN != 2)
         return 1;
 
-    const uint slaveN = atoi(args[1]);
+    const uint slaveID = atoi(args[1]);
 
-    DBGPRINTF("SLAVE[%u] - TEST 0", slaveN);
+    DBGPRINTF("SLAVE[%u] - TEST 0", slaveID);
 
     { uint c = 10;
 
@@ -58,7 +58,7 @@ int main (int argsN, char* args[]) {
     { uint c = 100;
         while (c--) {
 
-            DBGPRINTF("SLAVE[%u] - COUNTER %u\n", slaveN, c);
+            DBGPRINTF("SLAVE[%u] - COUNTER %u\n", slaveID, c);
 
             void** last = NULL;
             void** new;
@@ -81,19 +81,17 @@ int main (int argsN, char* args[]) {
         }
     }
 
-    DBGPRINTF("SLAVE[%u] - EXITING", slaveN);
+    DBGPRINTF("SLAVE[%u] - EXITING", slaveID);
 
-    DBGPRINTF("SLAVE[%u] - RECEIVING SELF", slaveN);
+    DBGPRINTF("SLAVE[%u] - RECEIVING SELF", slaveID);
 
     char received[65536];
 
     const uint receivedSize = SELF_GET(received, sizeof(received));
 
-    DBGPRINTF("SLAVE[%u] - RECEIVED %u BYTES:", slaveN, receivedSize);
+    DBGPRINTF("SLAVE[%u] - RECEIVED %u BYTES:", slaveID, receivedSize);
 
     write(STDOUT_FILENO, received, receivedSize);
 
     return 0;
 }
-
-// TODO: FIXME: TESTAR COM VÁRIAS THREADS/FORKS
