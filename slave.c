@@ -55,18 +55,18 @@ int main (int argsN, char* args[]) {
     }
 
     // TODO: FIXME: LEMBRAR O TAMANHO PEDIDO, E DAR UM MEMSET()
-    { uint counter = 100;
-        while (counter--) {
+    { uint c = 100;
+        while (c--) {
 
-            DBGPRINTF("SLAVE[%u] - COUNTER %u\n", slaveN, counter);
+            DBGPRINTF("SLAVE[%u] - COUNTER %u\n", slaveN, c);
 
             void** last = NULL;
             void** new;
 
-            while ((new = malloc(sizeof(void**) + (RANDOM(counter) % ((counter % 3 == 0) ? 0xFFFFFULL : 0xFFFULL))))) {
+            while ((new = malloc(sizeof(void**) + RSIZE(c)))) {
 
-                if ((rdtsc() + counter) % 10 == 0)
-                    new = realloc(new, rdtsc() % 65536) ?: new;
+                if (RANDOM(c) % 10 == 0)
+                    new = realloc(new, RSIZE(c)) ?: new;
 
                 // TODO: FIXME: uma porcentagem, dar free() aqui ao invés de incluir na lista
 
@@ -76,8 +76,8 @@ int main (int argsN, char* args[]) {
 
             while (last) {
 
-                if ((rdtsc() + counter) % 10 == 0)
-                    last = realloc(last, rdtsc() % 65536) ?: last;
+                if (RANDOM(c) % 10 == 0)
+                    last = realloc(last, RSIZE(c)) ?: last;
 
                 void** old = *last;
 
