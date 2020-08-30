@@ -19,7 +19,17 @@ typedef uint64_t u64;
 
 #define DBGPRINT(str) write(STDOUT_FILENO, __FILE__ ":- " str "\n", sizeof(__FILE__ ":- " str))
 
-#define DBGPRINTF(x, ...) ({ char b[4096]; write(2, b, snprintf(b, sizeof(b), "%20s %-20s %5d " x "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)); })
+#if DEBUG
+#define DBGPRINTF(x, ...) ({ char b[4096]; write(STDERR_FILENO, b, snprintf(b, sizeof(b), "%20s %-30s %5d " x "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)); })
+#else
+#define DBGPRINTF(fmt, ...) ({ })
+#endif
+
+#if DEBUG >= 2
+#define DBGPRINTF2 DBGPRINTF
+#else
+#define DBGPRINTF2(fmt, ...) ({ })
+#endif
 
 static inline u64 rdtsc(void) {
     uint lo;
