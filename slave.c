@@ -15,28 +15,76 @@
 
 #include "ms.h"
 
+static inline u64 RANDOM(const u64 x) {
+
+    uintll rand = rdtsc() + x;
+
+    return rand + __builtin_ia32_rdrand64_step(&rand);
+}
+
+#define RSIZE(x) (RANDOM(x) % ((RANDOM(x) % 3 == 0) ? 0xFFFFFULL : 0xFFFULL))
+
 int main (void) {
 
     DBGPRINT("SLAVE - MAIN");
 
-    //
-    void* const buff0 = malloc(65536);
-    void* const buff1 = malloc(65536);
-    void* const buff2 = malloc(65536);
-    void* const buff3 = malloc(16);
-    void* const buff4 = malloc(8);
+    int x = 10;
 
-    memset(buff0, 0x00, 65536);
-    memset(buff1, 0x11, 65536);
-    memset(buff2, 0x22, 65536);
-    memset(buff3, 0x33, 16);
-    memset(buff4, 0x44, 8);
+    while (x--) {
 
-    free(buff0);
-    free(buff1);
-    free(buff2);
-    free(buff3);
-    free(buff4);
+        free(malloc(RSIZE(0)));
+        free(malloc(RSIZE(0)));
+        free(malloc(RSIZE(0)));
+
+        free(realloc(malloc(RSIZE(0)), RSIZE(0)));
+        free(realloc(malloc(RSIZE(0)), RSIZE(0)));
+
+        free(malloc(RSIZE(0)));
+        free(malloc(RSIZE(0)));
+
+        free(realloc(malloc(RSIZE(0)), RSIZE(0)));
+        free(realloc(malloc(RSIZE(0)), RSIZE(0)));
+    }
+
+    // TODO: FIXME: LEMBRAR O TAMANHO PEDIDO, E DAR UM MEMSET()
+    { uint counter = 50000;
+        while (counter--) {
+
+            printf("SLAVE - COUNTER %u\n", counter);
+
+            void** last = NULL;
+            void** new;
+
+            while ((new = malloc(sizeof(void**) + (RANDOM(counter) % ((counter % 3 == 0) ? 0xFFFFFULL : 0xFFFULL))))) {
+
+                if ((rdtsc() + counter) % 10 == 0) {
+                    void** const new_ = realloc(new, rdtsc() % 65536);
+                    if (new_)
+                        new = new_;
+                }
+
+                // TODO: FIXME: uma porcentagem, dar free() aqui ao invés de incluir na lista
+
+                *new = last;
+                last = new;
+            }
+
+            while (last) {
+
+                if ((rdtsc() + counter) % 15 == 0) {
+                    void** const last_ = realloc(last, rdtsc() % 65536);
+                    if (last_)
+                        last = last_;
+                }
+
+                void** old = *last;
+
+                free(last);
+
+                last = old;
+            }
+        }
+    }
 
     DBGPRINT("SLAVE - EXITING");
 
@@ -44,10 +92,13 @@ int main (void) {
 
     char received[65536];
 
-    const int receivedSize = read(SELF_GET_FD, received, sizeof(received));
+    const uint receivedSize = SELF_GET(received, sizeof(received));
 
-    if (receivedSize != - 1)
-        write(STDOUT_FILENO, received, receivedSize);
+    DBGPRINTF("SLAVE - RECEIVED %u BYTES:", receivedSize);
+
+    write(STDOUT_FILENO, received, receivedSize);
 
     return 0;
 }
+
+// TODO: FIXME: TESTAR COM VÁRIAS THREADS/FORKS
