@@ -24,33 +24,41 @@ static inline u64 RANDOM(const u64 x) {
 
 #define RSIZE(x) (RANDOM(x) % ((RANDOM(x) % 3 == 0) ? 0xFFFFFULL : 0xFFFULL))
 
-int main (void) {
+int main (int argsN, char* args[]) {
 
-    DBGPRINT("SLAVE - MAIN");
+    if (argsN != 2)
+        return 1;
 
-    int x = 10;
+    const uint slaveN = atoi(args[1]);
 
-    while (x--) {
+    DBGPRINTF("SLAVE[%u] - TEST 0", slaveN);
 
-        free(malloc(RSIZE(0)));
-        free(malloc(RSIZE(0)));
-        free(malloc(RSIZE(0)));
+    { uint c = 10;
 
-        free(realloc(malloc(RSIZE(0)), RSIZE(0)));
-        free(realloc(malloc(RSIZE(0)), RSIZE(0)));
+        while (c--) {
 
-        free(malloc(RSIZE(0)));
-        free(malloc(RSIZE(0)));
+            free(NULL);
 
-        free(realloc(malloc(RSIZE(0)), RSIZE(0)));
-        free(realloc(malloc(RSIZE(0)), RSIZE(0)));
+            free(malloc(RSIZE(c + 1)));
+            free(malloc(RSIZE(c + 2)));
+            free(malloc(RSIZE(c + 3)));
+
+            free(realloc(malloc(RSIZE(c + 4)), RSIZE(c + 10)));
+            free(realloc(malloc(RSIZE(c + 5)), RSIZE(c + 11)));
+
+            free(malloc(RSIZE(c + 6)));
+            free(malloc(RSIZE(c + 7)));
+
+            free(realloc(malloc(RSIZE(c + 8)), RSIZE(c + 12)));
+            free(realloc(malloc(RSIZE(c + 9)), RSIZE(c + 13)));
+        }
     }
 
     // TODO: FIXME: LEMBRAR O TAMANHO PEDIDO, E DAR UM MEMSET()
-    { uint counter = 50000;
+    { uint counter = 100;
         while (counter--) {
 
-            printf("SLAVE - COUNTER %u\n", counter);
+            DBGPRINTF("SLAVE[%u] - COUNTER %u\n", slaveN, counter);
 
             void** last = NULL;
             void** new;
@@ -86,15 +94,15 @@ int main (void) {
         }
     }
 
-    DBGPRINT("SLAVE - EXITING");
+    DBGPRINTF("SLAVE[%u] - EXITING", slaveN);
 
-    DBGPRINT("SLAVE - RECEIVING SELF");
+    DBGPRINTF("SLAVE[%u] - RECEIVING SELF", slaveN);
 
     char received[65536];
 
     const uint receivedSize = SELF_GET(received, sizeof(received));
 
-    DBGPRINTF("SLAVE - RECEIVED %u BYTES:", receivedSize);
+    DBGPRINTF("SLAVE[%u] - RECEIVED %u BYTES:", slaveN, receivedSize);
 
     write(STDOUT_FILENO, received, receivedSize);
 
