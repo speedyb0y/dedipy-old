@@ -19,7 +19,7 @@ CHUNK_SIZE_MAX = LST - (LST % 8)
 
 OPEN, CLOSE = '{', '}'
 
-_S = '{' + ','.join(('0x%XULL' % s for s in SEQUENCE)) + '}'
+ROOTS_SIZES = '{' + ','.join(('0x%XULL' % s for s in SEQUENCE)) + '}'
 
 print(f'''
 #define N_START {N_START}
@@ -33,7 +33,7 @@ print(f'''
 #define ROOTS_SIZES_LST {LST}ULL
 #define ROOTS_SIZES_LMT {LMT}ULL
 
-static const u64 ROOTS_SIZES[] = {_S};
+static const u64 ROOTS_SIZES[] = {ROOTS_SIZES};
 
 #define CHUNK_SIZE_MAX {CHUNK_SIZE_MAX}ULL
 ''')
