@@ -17,11 +17,11 @@ typedef uint64_t u64;
 #define _LINE(x) #x
 #define LINE(x) _LINE(x)
 
-#define DBGPRINT(str) write(STDOUT_FILENO, __FILE__ ":- " str "\n", sizeof(__FILE__ ":- " str))
-
 #if DEBUG
+#define DBGPRINT(str) write(STDOUT_FILENO, __FILE__ ":- " str "\n", sizeof(__FILE__ ":- " str))
 #define DBGPRINTF(x, ...) ({ char b[4096]; write(STDERR_FILENO, b, snprintf(b, sizeof(b), "%20s %-30s %5d " x "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)); })
 #else
+#define DBGPRINT(str) ({ })
 #define DBGPRINTF(fmt, ...) ({ })
 #endif
 
