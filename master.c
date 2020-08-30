@@ -30,8 +30,13 @@
 #include "ms.h"
 
 //
-#define BUFF_PATH "malloc-buffer"
-#define BUFF_SIZE (128*1024*1024) // --> TODO: FIXME: esta variável é usada pelo malloc() para o processo atual; deve usar outra para o total
+#ifndef BUFF_PATH
+#error ""
+#endif
+
+#ifndef BUFF_SIZE
+#error ""
+#endif // --> TODO: FIXME: esta variável é usada pelo malloc() para o processo atual; deve usar outra para o total
 
 // A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
 #define MASTER_CPU 1
@@ -70,10 +75,11 @@ struct Slave {
 
 // EASY AND TOTAL CONTROL OF THE SLAVES EXECUTION PARAMETERS
 static Slave slaves[SLAVES_N] = {
-    { SLAVE_PATH("./slave"), SLAVE_ARGS("slave"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU(2), SLAVE_SIZE(16*1024*1024), SLAVE_ENV() },
-    { SLAVE_PATH("./slave"), SLAVE_ARGS("slave"), SLAVE_GROUP_ID(1), SLAVE_GROUP_N(6), SLAVE_CPU(3), SLAVE_SIZE(16*1024*1024), SLAVE_ENV() },
-    { SLAVE_PATH("./slave"), SLAVE_ARGS("slave"), SLAVE_GROUP_ID(2), SLAVE_GROUP_N(6), SLAVE_CPU(4), SLAVE_SIZE(16*1024*1024), SLAVE_ENV() },
-    { SLAVE_PATH("./slave"), SLAVE_ARGS("slave"), SLAVE_GROUP_ID(3), SLAVE_GROUP_N(6), SLAVE_CPU(5), SLAVE_SIZE(64*1024*1024), SLAVE_ENV() },
+    //{ SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU(2), SLAVE_SIZE(768*1024*1024), SLAVE_ENV() },
+    { SLAVE_PATH("./slave"), SLAVE_ARGS("slave"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU(2), SLAVE_SIZE(32*1024*1024), SLAVE_ENV() },
+    { SLAVE_PATH("./slave"), SLAVE_ARGS("slave"), SLAVE_GROUP_ID(1), SLAVE_GROUP_N(6), SLAVE_CPU(3), SLAVE_SIZE(1*1024*1024), SLAVE_ENV() },
+    { SLAVE_PATH("./slave"), SLAVE_ARGS("slave"), SLAVE_GROUP_ID(2), SLAVE_GROUP_N(6), SLAVE_CPU(4), SLAVE_SIZE(1*1024*1024), SLAVE_ENV() },
+    { SLAVE_PATH("./slave"), SLAVE_ARGS("slave"), SLAVE_GROUP_ID(3), SLAVE_GROUP_N(6), SLAVE_CPU(5), SLAVE_SIZE(1*1024*1024), SLAVE_ENV() },
 };
 
 static uint slavesCounter;
@@ -137,6 +143,7 @@ int main (void) {
         sigaction(SIGALRM,   &action, NULL)
       ) goto EXIT;
 
+#if 0
     // FIFO SCHEDULING
     struct sched_param params;
 
@@ -146,7 +153,7 @@ int main (void) {
 
     if (sched_setscheduler(0, SCHED_FIFO, &params) == -1)
         goto EXIT;
-
+#endif
     // CPU AFFINITY
     cpu_set_t set;
 
@@ -217,10 +224,9 @@ int main (void) {
     // - WILL SIGNALS INTERFER IN CONTEXT SWITCHING?
     // - WILL STACK INCREASE / PAGE FAULTS INTERFER IN CONTEXT SWITCHING?
 
-
-
     { // OPEN THE BUFFER FILE
-        const int fd = open(BUFF_PATH, O_RDWR | O_DIRECT | O_NOATIME | O_NOCTTY);
+            // O_DIRECT
+        const int fd = open(BUFF_PATH, O_RDWR | O_NOATIME | O_NOCTTY);
         if (fd == -1)
             return 1;
         if (dup2(fd, BUFFER_FD) != BUFFER_FD)
@@ -327,9 +333,6 @@ if (slave->id ==0) {
 
     // ALL PROCESSES TERMINATED
 
-    if (msync(BUFFER, BUFF_SIZE, MS_SYNC))
-        goto EXIT_SLAVES;
-
     //
     if (lseek(BUFFER_FD, 0, SEEK_CUR) != BUFF_SIZE)
         goto EXIT_SLAVES;
@@ -399,3 +402,8 @@ EXIT:
 // write("FIM:COOKIE")
 //  while(read() != "FIM:COOKIE");
 // =]
+
+
+
+// TODO: FIXME: for NUMA systems, it's better to test CPU<->memory regions, on start
+// then we only set first cpu0 for the first slave
