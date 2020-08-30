@@ -15,19 +15,31 @@
 
 #include "ms.h"
 
-static u64 rand = 0;
+static uintll _rand = 0;
 
 static inline u64 RANDOM (const u64 x) {
 
-    rand += x;
-    rand += rdtsc() & 0xFFFULL;
-    rand += __builtin_ia32_rdrand64_step(&rand);
+    _rand += x;
+    _rand += rdtsc() & 0xFFFULL;
+    _rand += __builtin_ia32_rdrand64_step(&_rand);
 
-    return rand;
+    return _rand;
 }
 
 // TODO: FIXME: mais regras
-#define RSIZE(x) (RANDOM(x) % ((RANDOM(x) % 3 == 0) ? 0xFFFFFULL : 0xFFFULL))
+static inline u64 RSIZE(const u64 x) {
+
+    const u64 r = RANDOM(x);
+
+    return RANDOM(x + r) & (
+        (r % 57 == 0) ? 0xFFFFFFFFULL :
+        (r % 41 == 0) ?  0xFFFFFFFULL :
+        (r % 11 == 0) ?   0xFFFFFFULL :
+        (r %  3 == 0) ?    0xFFFFFULL :
+        (r %  2 == 0) ?     0xFFFFULL :
+                               0xFFULL
+        );
+}
 
 int main (int argsN, char* args[]) {
 
