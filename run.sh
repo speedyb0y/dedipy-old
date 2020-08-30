@@ -2,18 +2,22 @@
 
 set -e
 
-rm -f -- malloc-buffer master slave malloc.o libmalloc.so LOG.*
+BUFF_PATH="/tmp/malloc-buffer"
+BUFF_SIZE=$[1024*1024*1024]
 
-gcc -Wfatal-errors -Wall -Werror -march=native -O0 -g -c -fpic malloc.c
-gcc -Wfatal-errors -Wall -Werror -march=native -O0 -g -shared -o libmalloc.so malloc.o
+rm -f -- ${BUFF_PATH}
+rm -f -- master slave malloc.o libmalloc.so LOG.*
 
-gcc -Wfatal-errors -Wall -Werror -march=native -O0 -g -fwhole-program -DLIB_MALLOC_PATH=\"$(pwd)/libmalloc.so\" master.c -o master
+gcc -DDEBUG=0 -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -march=native -O0 -g -c -fpic malloc.c
+gcc -DDEBUG=0 -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -march=native -O0 -g -shared -o libmalloc.so malloc.o
 
-gcc -Wfatal-errors -Wall -Werror -march=native -O0 -g -fwhole-program slave.c -o slave
+gcc -DDEBUG=0 -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -march=native -O0 -g -fwhole-program -DLIB_MALLOC_PATH=\"$(pwd)/libmalloc.so\" master.c -o master
+
+gcc -DDEBUG=0 -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -march=native -O0 -g -fwhole-program slave.c -o slave
 
 # sudo  mount -t hugetlbfs nodev /opt/
 
-fallocate -l $[128*1024*1024] malloc-buffer
+fallocate -l ${BUFF_SIZE} ${BUFF_PATH}
 
 sudo strace --follow-forks --output-separately -o LOG ./master
 
