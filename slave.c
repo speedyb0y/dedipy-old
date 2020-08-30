@@ -36,7 +36,7 @@ static inline u64 RSIZE(const u64 x) {
         (r % 11 == 0) ?   0xFFFFFFULL :
         (r %  3 == 0) ?    0xFFFFFULL :
         (r %  2 == 0) ?     0xFFFFULL :
-                               0xFFULL
+                              0xFFULL
         );
 }
 
