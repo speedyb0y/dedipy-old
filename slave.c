@@ -15,13 +15,18 @@
 
 #include "ms.h"
 
-static inline u64 RANDOM(const u64 x) {
+static u64 rand = 0;
 
-    uintll rand = rdtsc() + x;
+static inline u64 RANDOM (const u64 x) {
 
-    return rand + __builtin_ia32_rdrand64_step(&rand);
+    rand += x;
+    rand += rdtsc() & 0xFFFULL;
+    rand += __builtin_ia32_rdrand64_step(&rand);
+
+    return rand;
 }
 
+// TODO: FIXME: mais regras
 #define RSIZE(x) (RANDOM(x) % ((RANDOM(x) % 3 == 0) ? 0xFFFFFULL : 0xFFFULL))
 
 int main (int argsN, char* args[]) {
