@@ -456,16 +456,14 @@ static void main_loop (void) {
     }
 }
 
+// RETORNA: SE TEM QUE DAR WAIT
 static inline int main_wait_slaves (void) {
 
     loop {
         const pid_t pid = wait(NULL);
 
-        if (pid == -1) {
-            if (errno == ECHILD)
-                return 0;
-            return 1; // AINDA TEM QUE DAR WAIT
-        }
+        if (pid == -1)
+            return errno != ECHILD;
 
         // TODO: FIXME: identifica qual foi e limpa ele
     }
