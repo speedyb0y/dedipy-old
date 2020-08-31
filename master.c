@@ -42,6 +42,10 @@
 #error ""
 #endif // --> TODO: FIXME: esta variável é usada pelo malloc() para o processo atual; deve usar outra para o total
 
+#ifndef LIB_MS_PATH
+#define LIB_MS_PATH "libms.so"
+#endif
+
 // SLAVES
 typedef struct Slave Slave;
 
@@ -61,12 +65,11 @@ struct Slave {
     char** env;
 };
 
-
 #define SLAVES_LMT (&slaves[SLAVES_N])
 
 #define SLAVE_PATH(_)     .path = (_)
 #define SLAVE_ARGS(...)   .args = (char*[]){ __VA_ARGS__, NULL }
-#define SLAVE_ENV(...)    .env = (char*[]) { NULL, "LD_PRELOAD=" LIB_MALLOC_PATH, "TERM=linux", "PATH=/usr/local/bin:/bin:/usr/bin", ##__VA_ARGS__, NULL }
+#define SLAVE_ENV(...)    .env = (char*[]) { NULL, "LD_PRELOAD=" LIB_MS_PATH, "PATH=/usr/local/bin:/bin:/usr/bin", ##__VA_ARGS__, NULL }
 #define SLAVE_GROUP_ID(_) .groupID = (_)
 #define SLAVE_GROUP_N(_)  .groupN = (_)
 #define SLAVE_CPU(_)      .cpu = (_)
@@ -94,16 +97,16 @@ static Slave slaves[SLAVES_N] = {
 #define SLAVES_N 10
 
 static Slave slaves[SLAVES_N] = {
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-0", "F93850BE41375DB0", "0"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 2), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-1", "F93850BE41375DB0", "1"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 3), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-2", "F93850BE41375DB0", "2"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 4), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-3", "F93850BE41375DB0", "3"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 5), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-4", "F93850BE41375DB0", "4"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 6), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-5", "F93850BE41375DB0", "5"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 7), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-6", "F93850BE41375DB0", "6"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 8), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-7", "F93850BE41375DB0", "7"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 9), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-8", "F93850BE41375DB0", "8"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU(10), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
-    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-9", "F93850BE41375DB0", "9"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU(11), SLAVE_SIZE(BUFF_SIZE/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-0", "F93850BE41375DB0", "0"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 2), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-1", "F93850BE41375DB0", "1"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 3), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-2", "F93850BE41375DB0", "2"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 4), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-3", "F93850BE41375DB0", "3"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 5), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-4", "F93850BE41375DB0", "4"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 6), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-5", "F93850BE41375DB0", "5"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 7), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-6", "F93850BE41375DB0", "6"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 8), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-7", "F93850BE41375DB0", "7"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU( 9), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-8", "F93850BE41375DB0", "8"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU(10), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
+    { SLAVE_PATH("/usr/bin/python"), SLAVE_ARGS("python", "slave-9", "F93850BE41375DB0", "9"), SLAVE_GROUP_ID(0), SLAVE_GROUP_N(6), SLAVE_CPU(11), SLAVE_SIZE((BUFF_SIZE - SLAVES_N*65536)/10), SLAVE_ENV() },
 };
 #endif
 
@@ -245,6 +248,8 @@ static void init_slaves (void) {
 
     u64 cpus = 1ULL << MASTER_CPU;
 
+    DBGPRINTF("MASTER SIZE %llu", (uintll)MASTER_SIZE);
+
     do {
         slave->id = slaveID++;
         slave->pid = 0;
@@ -256,7 +261,10 @@ static void init_slaves (void) {
         slave->size *= 65536;
         slaveStart += slave->size;
         cpus |= (1ULL << slave->cpu);
+        DBGPRINTF("SLAVE %u START %llu SIZE %llu", slave->id, (uintll)slave->start, (uintll)slave->size);
     } while (++slave != SLAVES_LMT);
+
+    DBGPRINTF("TOTAL USED %llu", (uintll)slaveStart);
 
     // MAKE SURE EVERYTHING HAS FIT
     if (slaveStart > BUFF_SIZE)
