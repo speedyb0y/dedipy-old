@@ -52,9 +52,9 @@ int main (int argsN, char* args[]) {
         return 1;
 #endif
 
-#if 0
+#if 1
     // PRINT HOW MUCH MEMORY WE CAN ALLOCATE
-    { u64 blockSize = 4*4096; // >= sizeof(void**)
+    { u64 blockSize = 256*4096; // >= sizeof(void**)
 
         do { u64 count = 0; void** last = NULL; void** this;
             //
