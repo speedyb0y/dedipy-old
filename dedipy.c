@@ -49,6 +49,10 @@
 #error ""
 #endif // --> TODO: FIXME: esta variável é usada pelo malloc() para o processo atual; deve usar outra para o total
 
+#ifndef ALLOC_ALIGNMENT // PER PROCESS
+#define ALLOC_ALIGNMENT 65536
+#endif
+
 #define BUFFER_MMAP_FLAGS (MAP_SHARED | MAP_FIXED | MAP_FIXED_NOREPLACE)
 
 static uint workersCounter;
@@ -64,7 +68,9 @@ struct Worker {
     u16 reserved;
     u16 code; // NAO PRECISA SER PALAVRA GRANDE; É SÓ PARA TORNAR MAIS ÚNICO, JUNTO COM O PID E LAUNCHED
     u64 pid;
-    u64 started; // TIME IT WAS LAUNCHED, TODO: FIXME: IN RDTSC()
+    u32 again; // WHEN TO LAUNCH IT AGAIN, IN SECONDS
+    u32 sizeWeight;
+    u64 started; // TIME IT WAS LAUNCHED: IN RDTSC()
     u64 start;
     u64 size;
     char** args;
@@ -77,7 +83,12 @@ struct Worker {
 #define WORKER_GROUP_ID(_) .groupID = (_)
 #define WORKER_GROUP_N(_)  .groupN = (_)
 #define WORKER_CPU(_)      .cpu = (_)
-#define WORKER_SIZE(_)     .size = (_##ULL)
+#define WORKER_SIZE(_)     .size = (_##ULL) // MINIMAL
+#define WORKER_SIZE_WEIGHT(_)  .sizeWeight = ((_##U) << 18) // IF SET, THE REMAINING WILL BE DIVIDED INTO THOSE, ON EACH GROUP
+
+// (1 << 31) / (1 << 18) -> aguenta weights 8192x acima
+
+// TODO: FIXME: se WORKER_SIZE_WEIGHT FOR FLOAT/DOUBLE, fazer (_)*4194304
 
 // EASY AND TOTAL CONTROL OF THE WORKERS EXECUTION PARAMETERS
 // A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
@@ -90,16 +101,16 @@ struct Worker {
 
 // PROBLEMA: esta alocando por multiplos de paginas :/ entao nao dá para dividir minuciosamente as coisas
 static Worker workers[WORKERS_N] = {
-    { WORKER_ARGS("worker-0", "F93850BE41375DB0", "0"), WORKER_GROUP_ID(0), WORKER_GROUP_N(10), WORKER_CPU( 2), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-1", "F93850BE41375DB0", "1"), WORKER_GROUP_ID(1), WORKER_GROUP_N(10), WORKER_CPU( 3), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-2", "F93850BE41375DB0", "2"), WORKER_GROUP_ID(2), WORKER_GROUP_N(10), WORKER_CPU( 4), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-3", "F93850BE41375DB0", "3"), WORKER_GROUP_ID(3), WORKER_GROUP_N(10), WORKER_CPU( 5), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-4", "F93850BE41375DB0", "4"), WORKER_GROUP_ID(4), WORKER_GROUP_N(10), WORKER_CPU( 6), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-5", "F93850BE41375DB0", "5"), WORKER_GROUP_ID(5), WORKER_GROUP_N(10), WORKER_CPU( 7), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-6", "F93850BE41375DB0", "6"), WORKER_GROUP_ID(6), WORKER_GROUP_N(10), WORKER_CPU( 8), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-7", "F93850BE41375DB0", "7"), WORKER_GROUP_ID(7), WORKER_GROUP_N(10), WORKER_CPU( 9), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-8", "F93850BE41375DB0", "8"), WORKER_GROUP_ID(8), WORKER_GROUP_N(10), WORKER_CPU(10), WORKER_SIZE(2ULL*1024*1024*1024) },
-    { WORKER_ARGS("worker-9", "F93850BE41375DB0", "9"), WORKER_GROUP_ID(9), WORKER_GROUP_N(10), WORKER_CPU(11), WORKER_SIZE(2ULL*1024*1024*1024) },
+    { WORKER_ARGS(PROGNAME "-0", "F93850BE41375DB0", "0"), WORKER_GROUP_ID(0), WORKER_GROUP_N(10), WORKER_CPU( 2), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
+    { WORKER_ARGS(PROGNAME "-1", "F93850BE41375DB0", "1"), WORKER_GROUP_ID(1), WORKER_GROUP_N(10), WORKER_CPU( 3), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(2) },
+    { WORKER_ARGS(PROGNAME "-2", "F93850BE41375DB0", "2"), WORKER_GROUP_ID(2), WORKER_GROUP_N(10), WORKER_CPU( 4), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
+    { WORKER_ARGS(PROGNAME "-3", "F93850BE41375DB0", "3"), WORKER_GROUP_ID(3), WORKER_GROUP_N(10), WORKER_CPU( 5), WORKER_SIZE(4688379904), WORKER_SIZE_WEIGHT(1) },
+    { WORKER_ARGS(PROGNAME "-4", "F93850BE41375DB0", "4"), WORKER_GROUP_ID(4), WORKER_GROUP_N(10), WORKER_CPU( 6), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
+    { WORKER_ARGS(PROGNAME "-5", "F93850BE41375DB0", "5"), WORKER_GROUP_ID(5), WORKER_GROUP_N(10), WORKER_CPU( 7), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
+    { WORKER_ARGS(PROGNAME "-6", "F93850BE41375DB0", "6"), WORKER_GROUP_ID(6), WORKER_GROUP_N(10), WORKER_CPU( 8), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
+    { WORKER_ARGS(PROGNAME "-7", "F93850BE41375DB0", "7"), WORKER_GROUP_ID(7), WORKER_GROUP_N(10), WORKER_CPU( 9), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
+    { WORKER_ARGS(PROGNAME "-8", "F93850BE41375DB0", "8"), WORKER_GROUP_ID(8), WORKER_GROUP_N(10), WORKER_CPU(10), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
+    { WORKER_ARGS(PROGNAME "-9", "F93850BE41375DB0", "9"), WORKER_GROUP_ID(9), WORKER_GROUP_N(10), WORKER_CPU(11), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
 };
 
 //
@@ -175,8 +186,8 @@ static void launch_worker (const Worker* const worker) {
     fatal("EXECVE FAILED");
 }
 
-// TODO: FIXME: use milliseconds
-static inline u64 getseconds (void) {
+// TODO: FIXME: TER CERTEZA DE QUE É BOOT TIME, PARA QUE JAMAIS TENHA OVERFLOW
+static inline uint getseconds (void) {
 
     struct timespec t = { .tv_sec = 0, .tv_nsec = 0 };
 
@@ -196,8 +207,9 @@ static void launch_workers (void) {
     do { // TODO: FIXME: limpar os pipes antes de iniciar o processo?
         if (worker->pid == 0) {
             // SÓ SE JÁ ESTIVER NA HORA
-            if ((worker->started + 30) <= now) {
-                worker->started = now;
+            if (worker->again <= now) {
+                worker->again = now + 30;
+                worker->started = rdtsc();
                 worker->code = workersCounter++;
                 const pid_t pid = fork();
                 if (pid == 0)
@@ -210,37 +222,75 @@ static void launch_workers (void) {
 
 static void init_workers (void) {
 
+    dbg("BUFFER SIZE %llu", (uintll)BUFF_SIZE);
+    dbg("DAEMON SIZE %llu", (uintll)DAEMON_SIZE);
+
     //
     workersCounter = 0;
 
     uint workerID = 0;
 
+    // TODO: FIXME: fazer por grupos
+    // last = 0 // ultimo grupoID visto
+    //   loopa de novo, aumentando, até que nao haja nenhum grupo ID > que este
+    //     dai calcula o tamanho total do grupo atual
+    // depois vai pegar a memória que sobra, e dividir ela igualmente entre os grupos
+    // e dai, dividir a memória que sobrou para o grupom entre os membros dele
+    { Worker* worker = workers; u64 weights = 0;
+        // CALCULA A PROPORÇÃO DE CADA UM
+        // SE O MÍNIMO DE UM É MAIOR DO QUE SUA PROPORÇÃO, USA ESTE MÍNIMO/DISPONIVEL
+        // SOMA O TOTAL DOS PESOS
+        while (worker != WORKERS_LMT)
+            weights += (worker++)->sizeWeight;
+        // PEGA O QUE TEM DISPONÍVEL
+        u64 available = BUFF_SIZE - DAEMON_SIZE - WORKERS_N*ALLOC_ALIGNMENT;
+        // DISTRIBUI ESTE DISPONÍVEL
+        dbg("DISTRIBUINDO DISPONÍVEL %llu", (uintll)available);
+        while (worker-- != workers) { const u64 proporcional = (((((u64)worker->sizeWeight) << 22) * available) / weights) >> 22;
+            if (proporcional <= worker->size) {
+                available -= worker->size; // ESTE PRECISA DE MAIS DO QUE O PROPORCIONAL, ENTAO RESERVA ELE NO TOTAL
+                worker->sizeWeight = 0; // NAO USAR O PESO
+            }
+        } // RECALCULAR OS PESOS
+        weights = 0;
+        while (++worker != WORKERS_LMT)
+            weights += worker->sizeWeight;
+        // agora esse total é divido etre os que vão usar oweight
+        // os demais ja tem seu tamanho total, que já é >= seu mínimo
+        dbg("DISTRIBUINDO DISPONÍVEL %llu ENTRE OS PROPORCIONAIS", (uintll)available);
+        // O QUANTO CADA UM REPRESENTA DENTRO DESSE TOTAL
+        while (worker-- != workers)
+            if (worker->sizeWeight) { u64 s = available*((double)worker->sizeWeight / weights); // (((((u64)worker->sizeWeight) << 22) * available) / weights) >> 22  ; //available*((double)worker->sizeWeight / weights); // ((((u64)worker->sizeWeight * available) << 22) / weights) >> 22;
+                worker->size = s;
+                dbg("[%u] FINALIZAND COM WEIGHT %f = %llu ", (uint)(worker-workers), (  (double)worker->sizeWeight / weights  ), (uintll)s);
+            }
+    }
+
     Worker* worker = workers;
 
-    u64 workerStart = DAEMON_SIZE;
+    u64 offset = DAEMON_SIZE;
 
     u64 cpus = 1ULL << DAEMON_CPU;
-
-    dbg("DAEMON SIZE %llu", (uintll)DAEMON_SIZE);
 
     do {
         worker->id = workerID++;
         worker->pid = 0;
         worker->code = 0;
+        worker->again = 0;
         worker->started = 0;
-        worker->start = workerStart;
-        worker->size += 65535; // ALINHA PARA CIMA
-        worker->size /= 65536;
-        worker->size *= 65536;
-        workerStart += worker->size;
+        worker->start = offset;
+        worker->size += ALLOC_ALIGNMENT - 1; // ALINHA PARA CIMA
+        worker->size /= ALLOC_ALIGNMENT;
+        worker->size *= ALLOC_ALIGNMENT;
+        offset += worker->size;
         cpus |= (1ULL << worker->cpu);
         dbg("WORKER %u START %llu SIZE %llu", worker->id, (uintll)worker->start, (uintll)worker->size);
     } while (++worker != WORKERS_LMT);
 
-    dbg("TOTAL USED %llu", (uintll)workerStart);
+    dbg("TOTAL USED %llu; UNUSED %llu", (uintll)offset, (uintll)(BUFF_SIZE - offset));
 
     // MAKE SURE EVERYTHING HAS FIT
-    if (workerStart > BUFF_SIZE)
+    if (offset > BUFF_SIZE)
         fatal("INSUFFICIENT BUFFER");
 
     // ONE, AND ONLY ONE PROCESS PER CPU
