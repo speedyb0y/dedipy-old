@@ -2,6 +2,14 @@
 
 */
 
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+
+#ifndef typeof
+#define typeof __typeof__
+#endif
+
 #define loop while (1)
 #define elif else if
 
@@ -17,25 +25,36 @@ typedef uint64_t u64;
 #define _LINE(x) #x
 #define LINE(x) _LINE(x)
 
+#ifndef DBG_PREPEND
+#define DBG_PREPEND
+#endif
+
+#ifdef DBG_PREPEND_ARGS
+#define _DBG_PREPEND_ARGS , DBG_PREPEND_ARGS
+#else
+#define DBG_PREPEND_ARGS
+#define _DBG_PREPEND_ARGS
+#endif
+
 // TODO: FIXME: name fmt \n, nameargs, ##__VA_ARGS__
 #if DEBUG
 #define DBGPRINT(str) write(STDOUT_FILENO, __FILE__ ":- " str "\n", sizeof(__FILE__ ":- " str))
-#define DBGPRINTF(x, ...) ({ char b[4096]; write(STDERR_FILENO, b, snprintf(b, sizeof(b), "%20s %-30s %5d " x "\n", __FILE__, __func__, __LINE__, ##__VA_ARGS__)); })
+#define dbg(x, ...) ({ char b[4096]; write(STDERR_FILENO, b, snprintf(b, sizeof(b), "%20s %-30s %5d " DBG_PREPEND x "\n", __FILE__, __func__, __LINE__ _DBG_PREPEND_ARGS, ##__VA_ARGS__)); })
 #else
 #define DBGPRINT(str) ({ })
-#define DBGPRINTF(fmt, ...) ({ })
+#define dbg(fmt, ...) ({ })
 #endif
 
 #if DEBUG >= 2
-#define DBGPRINTF2 DBGPRINTF
+#define dbg2 dbg
 #else
-#define DBGPRINTF2(fmt, ...) ({ })
+#define dbg2(fmt, ...) ({ })
 #endif
 
 #if DEBUG >= 3
-#define DBGPRINTF3 DBGPRINTF
+#define dbg3 dbg
 #else
-#define DBGPRINTF3(fmt, ...) ({ })
+#define dbg3(fmt, ...) ({ })
 #endif
 
 static inline u64 rdtsc(void) {
@@ -49,7 +68,11 @@ static inline u64 rdtsc(void) {
 
 #define ASSERT(condition) ({ if (!(condition)) { write(STDERR_FILENO, "\n" __FILE__ ":" LINE(__LINE__) " ASSERT FAILED: " #condition "\n", sizeof("\n" __FILE__ ":" LINE(__LINE__) " ASSERT FAILED: " #condition "\n")); abort(); } })
 
-#define fatal(reason) ({ write(2, reason "\n", sizeof(reason)); abort(); })
+// TODO: FIXME: :S
+#define abort_group() ({ kill(0, SIGABRT); kill(0, SIGKILL); abort(); })
+
+#define fatal(reason)       ({ write(2, "FATAL: " reason "\n", sizeof("FATAL: " reason)); abort(); })
+#define fatal_group(reason) ({ write(2, "FATAL: " reason "\n", sizeof("FATAL: " reason)); abort_group(); })
 
 /*
  TODO: FIXME: forçar compilacao a falhar :/
