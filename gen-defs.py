@@ -35,11 +35,6 @@ ROOTS_SIZES = '{' + ','.join(('0x%XULL' % s for s in SEQUENCE)) + '}'
 SUFFIX = 'ULL'
 
 print(f'''
-#define N_START {N_START}
-#define X_DIVISOR {X_DIVISOR}
-#define X_SALT {X_SALT}
-#define X_LAST {X_LAST}
-
 #define ROOTS_N {ROOTS_N}
 
 #define ROOTS_SIZES_FST 0x{FST_}{SUFFIX} // {FST}
@@ -47,6 +42,12 @@ print(f'''
 #define ROOTS_SIZES_LMT 0x{LMT_}{SUFFIX} // {LMT}
 
 static const u64 ROOTS_SIZES[] = {ROOTS_SIZES};
+
+#define N_START {N_START}
+
+#define X_DIVISOR {X_DIVISOR}
+#define X_SALT {X_SALT}
+#define X_LAST {X_LAST}
 
 #define C_SIZE_MIN 0x{C_SIZE_MIN_}{SUFFIX} // {C_SIZE_MIN}
 #define C_SIZE_MAX 0x{C_SIZE_MAX_}{SUFFIX} // {C_SIZE_MAX}
