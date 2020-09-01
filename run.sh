@@ -1,24 +1,49 @@
 #!/bin/bash
 
-set -e
+set -e -x
 
-BUFF_PATH="/tmp/malloc-buffer"
-BUFF_SIZE=$[4*1024*1024*1024+16*1024*1024]
+if ! [[ -n ${CC} ]] ; then
+    CC="gcc"
+fi
 
-rm -f -- ${BUFF_PATH}
-rm -f -- master slave malloc.o libmalloc.so LOG.*
+if ! [[ -n ${CC_ARGS} ]] ; then
+    CC_ARGS=""
+fi
 
-gcc -DDEBUG=1 -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -march=native -O0 -g -c -fpic malloc.c
-gcc -DDEBUG=1 -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -march=native -O0 -g -shared -Wl,-init,ms_init -o libmalloc.so malloc.o
+if ! [[ -n ${BUFF_PATH} ]] ; then
+    BUFF_PATH="/dev/hugepages/buffer"
+fi
 
-gcc -DDEBUG=1 -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -march=native -O0 -g -fwhole-program -DLIB_MALLOC_PATH=\"$(pwd)/libmalloc.so\" master.c -o master
+if ! [[ -n ${BUFF_SIZE} ]] ; then
+    BUFF_SIZE=$[24*1024*1024*1024+16*1024*1024]
+fi
 
-gcc -DDEBUG=1 -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -march=native -O0 -g -fwhole-program slave.c -o slave
+if ! [[ -n ${PROGNAME} ]] ; then
+    PROGNAME="dedipy"
+fi
+
+if ! [[ -n ${DEDIPY_PYTHON_PATH} ]] ; then
+    DEDIPY_PYTHON_PATH="/usr/bin/python"
+fi
+
+rm -f -- dedipy python LOG LOG.*
+
+# -Wextra
+${CC} -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -DPROGNAME=\"${PROGNAME}\" -DDEBUG=1 -DDEDIPY_DEBUG=1 -DDEDIPY_VERIFY=1 -DDEDIPY_TEST=1 -DDEDIPY_PYTHON_PATH=\"${DEDIPY_PYTHON_PATH}\" -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -O2 ${CC_ARGS} -fwhole-program -o ${PROGNAME} dedipy.c
+
+${CC} -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -DPROGNAME=\"${PROGNAME}\" -DDEBUG=1 -DDEDIPY_DEBUG=1 -DDEDIPY_VERIFY=1 -DDEDIPY_TEST=1 -DDEDIPY_PYTHON_PATH=\"${DEDIPY_PYTHON_PATH}\" -DBUFF_PATH=\"${BUFF_PATH}\" -DBUFF_SIZE=${BUFF_SIZE} -Wfatal-errors -Wall -Werror -O2 ${CC_ARGS} -fwhole-program -o python python.c
 
 # sudo  mount -t hugetlbfs nodev /opt/
 
-fallocate -l ${BUFF_SIZE} ${BUFF_PATH}
+if [[ ${RUN} = 1 ]] ; then
 
-sudo strace --follow-forks --output-separately -o LOG ./master
+    sudo rm -f -- ${BUFF_PATH}
 
-echo $?
+    if false ; then
+        sudo strace --follow-forks --output-separately -o LOG ./${PROGNAME}
+    else
+        sudo ./${PROGNAME}
+    fi
+
+    echo $?
+fi
