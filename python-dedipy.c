@@ -155,7 +155,7 @@ static const u64 ROOTS_SIZES[] = {0x20ULL,0x26ULL,0x2CULL,0x33ULL,0x39ULL,0x40UL
 // O MENOR TAMANHO POSSÍVEL; SE TENTARMOS ACESSAR ELE, VAMOS DESCOBRIR COM O ASSERT SIZE >= MIN
 #define BUFF_LR_VALUE 2ULL // ass
 
-static inline u64 unkn_size_isfree_decode (const u64 s) {
+static inline u64 c_size_decode_isfree (const u64 s) {
     return s & 1ULL;
 }
 
@@ -211,23 +211,23 @@ static inline u64 u_size_encode (const u64 s) {
 #define C_PTR_(chunk)  (*C_PTR__ (chunk))
 #define C_NEXT_(chunk) (*C_NEXT__(chunk))
 
-static inline int    c_is_free  (const void* const chunk                  ) { return unkn_size_isfree_decode(C_SIZE_(chunk)); }
-static inline u64    c_ld_size  (const void* const chunk                  ) { return c_size_decode(C_SIZE_(chunk)); }
-static inline u64    c_ld_size2 (      void* const chunk, const u64 size  ) { return c_size_decode(C_SIZE2_(chunk, size)); }
-static inline void   u_st_size  (      void* const chunk, const u64 size  ) { C_SIZE_(chunk) = u_size_encode(size); }
+static inline int    c_is_free  (const void* const chunk                  ) { return c_size_decode_isfree(C_SIZE_ (chunk)); }
+static inline u64    c_ld_size  (const void* const chunk                  ) { return c_size_decode       (C_SIZE_ (chunk)); }
+static inline u64    c_ld_size2 (      void* const chunk, const u64 size  ) { return c_size_decode       (C_SIZE2_(chunk, size)); }
+static inline void   u_st_size  (      void* const chunk, const u64 size  ) {                      C_SIZE_(chunk) = u_size_encode(size); }
 static inline u64    u_ld_size  (const void* const chunk                  ) { return u_size_decode(C_SIZE_(chunk)); };
 static inline void*  u_data     (      void* const chunk                  ) { return chunk + _C_HDR_SIZE_USED; }
 static inline void*  u_from_data(      void* const data                   ) { return data - _C_HDR_SIZE_USED; }
 static inline u64    u_data_size(                         const u64 size  ) { return size - _C_HDR_SIZE_USED - C_SIZE2_SIZE__; } // DADO UM CHUNK USED DE TAL TAMANHO, CALCULA O TAMANHO DOS DADOS
-static inline void   u_st_size2 (      void* const chunk, const u64 size  ) { C_SIZE2_(chunk, size) = u_size_encode(size); }
+static inline void   u_st_size2 (      void* const chunk, const u64 size  ) {                      C_SIZE2_(chunk, size) = u_size_encode(size); }
 static inline u64    u_ld_size2 (const void* const chunk, const u64 size  ) { return u_size_decode(C_SIZE2_(chunk, size)); }
-static inline void   f_st_size  (      void* const chunk, const u64 size  ) {        C_SIZE_(chunk) = f_size_encode(size); }
+static inline void   f_st_size  (      void* const chunk, const u64 size  ) {                      C_SIZE_(chunk) = f_size_encode(size); }
 static inline u64    f_ld_size  (const void* const chunk                  ) { return f_size_decode(C_SIZE_(chunk)); }
 static inline void   f_st_ptr   (      void* const chunk, void** const ptr) {         C_PTR_(chunk) = ptr; }
 static inline void** f_ld_ptr   (const void* const chunk                  ) { return  C_PTR_(chunk); }
 static inline void   f_st_next  (      void* const chunk, void* const next) {         C_NEXT_(chunk) = next; }
 static inline void*  f_ld_next  (const void* const chunk                  ) { return  C_NEXT_(chunk); }
-static inline void** f_ld_next_ (const void* const chunk                  ) { return C_NEXT__(chunk); }
+static inline void** f_ld_next_ (const void* const chunk                  ) { return  C_NEXT__(chunk); }
 static inline void   f_st_size2 (      void* const chunk, const u64 size  ) {         C_SIZE2_(chunk, size) = f_size_encode(size); }
 static inline u64    f_ld_size2 (const void* const chunk, const u64 size  ) { return f_size_decode(C_SIZE2_(chunk, size)); }
 
