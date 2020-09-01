@@ -243,10 +243,13 @@ static void init_workers (void) {
         while (worker != WORKERS_LMT)
             weights += (worker++)->sizeWeight;
         // PEGA O QUE TEM DISPONÍVEL
-        u64 available = BUFF_SIZE - DAEMON_SIZE - WORKERS_N*ALLOC_ALIGNMENT;
+        u64 available = BUFF_SIZE - DAEMON_SIZE; // NOTA:
         // DISTRIBUI ESTE DISPONÍVEL
         while (worker-- != workers) {
-            if ((((u64)worker->sizeWeight * (u64)available) / (u64)weights) <= worker->size) {
+            worker->size += ALLOC_ALIGNMENT - 1; // ALINHA PARA CIMA
+            worker->size /= ALLOC_ALIGNMENT;
+            worker->size *= ALLOC_ALIGNMENT;
+            if (worker->size <= (((u64)worker->sizeWeight * (u64)available) / (u64)weights)) {
                 available -= worker->size; // ESTE PRECISA DE MAIS DO QUE O PROPORCIONAL, ENTAO RESERVA ELE NO TOTAL
                 worker->sizeWeight = 0; // NAO USAR O PESO
             }
@@ -258,8 +261,12 @@ static void init_workers (void) {
         // OS DEMAIS JA TEM SEU TAMANHO TOTAL, QUE JÁ É >= SEU MÍNIMO
         // O QUANTO CADA UM REPRESENTA DENTRO DESSE TOTAL
         while (worker-- != workers)
-            if (worker->sizeWeight)
+            if (worker->sizeWeight) {
                 worker->size = ((u64)worker->sizeWeight * (u64)available) / (u64)weights;
+                worker->size += ALLOC_ALIGNMENT - 1; // ALINHA PARA CIMA
+                worker->size /= ALLOC_ALIGNMENT;
+                worker->size *= ALLOC_ALIGNMENT;
+            }
     }
 
     Worker* worker = workers;
@@ -275,15 +282,12 @@ static void init_workers (void) {
         worker->again = 0;
         worker->started = 0;
         worker->start = offset;
-        worker->size += ALLOC_ALIGNMENT - 1; // ALINHA PARA CIMA
-        worker->size /= ALLOC_ALIGNMENT;
-        worker->size *= ALLOC_ALIGNMENT;
         offset += worker->size;
         cpus |= (1ULL << worker->cpu);
         dbg("WORKER %u START %llu SIZE %llu", worker->id, (uintll)worker->start, (uintll)worker->size);
     } while (++worker != WORKERS_LMT);
 
-    dbg("TOTAL USED %llu; UNUSED %llu", (uintll)offset, (uintll)(BUFF_SIZE - offset));
+    dbg("TOTAL USED %llu; UNUSED %lld", (uintll)offset, (long long int)(BUFF_SIZE - offset));
 
     // MAKE SURE EVERYTHING HAS FIT
     if (offset > BUFF_SIZE)
