@@ -1,4 +1,4 @@
-# malloc-hack
+# DediPy
 
 This project is supposed to work as a skell for other projects using this model:
 
