@@ -476,6 +476,14 @@ void dedipy_free (void* const data) {
 
 void dedipy_main (void) {
 
+    // SUPPORT CALLING FROM MULTIPLE PLACES =]
+    static int initialized = 0;
+
+    if (initialized)
+        return;
+
+    initialized = 1;
+
     uintll buffFD_    = 0;
     uintll buffFlags_ = 0;
     uintll buffAddr_  = 0;
@@ -496,7 +504,7 @@ void dedipy_main (void) {
     //fatal("FAILED TO LOAD ENVIROMENT PARAMS");
     if (var) {
         if (sscanf(var, "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX"  "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX",
-            &cpu_, &pid_, &buffFD_, &buffFlags_, &buffAddr_, &buffTotal_, &buffStart_, &buffSize_, &code_, &started_, &id_, &n_, &groupID_, &groupN_) != 13)
+            &cpu_, &pid_, &buffFD_, &buffFlags_, &buffAddr_, &buffTotal_, &buffStart_, &buffSize_, &code_, &started_, &id_, &n_, &groupID_, &groupN_) != 14)
             fatal("FAILED TO LOAD ENVIROMENT PARAMS");
     } else { // EMERGENCY MODE =]
         cpu_ = sched_getcpu();
@@ -532,7 +540,7 @@ void dedipy_main (void) {
     if ((pid_t)pid_ != getpid())
         fatal("PID MISMATCH");
 
-    if (buffStart_ >= buffSize_)
+    if (buffStart_ >= buffTotal_)
         fatal("BAD BUFFER START");
 
     if (buffSize_ == 0)
@@ -577,6 +585,7 @@ void dedipy_main (void) {
     //
     memset(buff, 0, buffSize);
 
+    // var + 14*16, strlen(var + 14*16)
     char name[256];
 
     if (snprintf(name, sizeof(name), PROGNAME "#%u", id) < 2 || prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0))
