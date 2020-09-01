@@ -245,9 +245,8 @@ static void init_workers (void) {
         // PEGA O QUE TEM DISPONÍVEL
         u64 available = BUFF_SIZE - DAEMON_SIZE - WORKERS_N*ALLOC_ALIGNMENT;
         // DISTRIBUI ESTE DISPONÍVEL
-        dbg("DISTRIBUINDO DISPONÍVEL %llu", (uintll)available);
-        while (worker-- != workers) { const u64 proporcional = (((((u64)worker->sizeWeight) << 22) * available) / weights) >> 22;
-            if (proporcional <= worker->size) {
+        while (worker-- != workers) {
+            if ((((u64)worker->sizeWeight * (u64)available) / (u64)weights) <= worker->size) {
                 available -= worker->size; // ESTE PRECISA DE MAIS DO QUE O PROPORCIONAL, ENTAO RESERVA ELE NO TOTAL
                 worker->sizeWeight = 0; // NAO USAR O PESO
             }
@@ -255,15 +254,12 @@ static void init_workers (void) {
         weights = 0;
         while (++worker != WORKERS_LMT)
             weights += worker->sizeWeight;
-        // agora esse total é divido etre os que vão usar oweight
-        // os demais ja tem seu tamanho total, que já é >= seu mínimo
-        dbg("DISTRIBUINDO DISPONÍVEL %llu ENTRE OS PROPORCIONAIS", (uintll)available);
+        // DIVIDE O RESTANTE ENTRE OS QUE VÃO USAR O WEIGHT
+        // OS DEMAIS JA TEM SEU TAMANHO TOTAL, QUE JÁ É >= SEU MÍNIMO
         // O QUANTO CADA UM REPRESENTA DENTRO DESSE TOTAL
         while (worker-- != workers)
-            if (worker->sizeWeight) { u64 s = available*((double)worker->sizeWeight / weights); // (((((u64)worker->sizeWeight) << 22) * available) / weights) >> 22  ; //available*((double)worker->sizeWeight / weights); // ((((u64)worker->sizeWeight * available) << 22) / weights) >> 22;
-                worker->size = s;
-                dbg("[%u] FINALIZAND COM WEIGHT %f = %llu ", (uint)(worker-workers), (  (double)worker->sizeWeight / weights  ), (uintll)s);
-            }
+            if (worker->sizeWeight)
+                worker->size = ((u64)worker->sizeWeight * (u64)available) / (u64)weights;
     }
 
     Worker* worker = workers;
