@@ -93,14 +93,17 @@ static inline u64 rdtsc(void) {
 
 // typeof(sizeof(int))
 
-static inline int addr_in (const void* const addr, const u64 size, const void* const addr2, const u64 size2)
-    { return addr2 <= addr && (addr + size) <= (addr2 + size2); }
-
-#define assert_addr_in(addr, size, addr2, size2) ASSERT(addr_in((addr), (size), (addr2), (size2)))
-
-// TODO: FIXME: tem que confirmar que os tipos são os mesmos: e
-#define assert_is_element_of_array(e, a, n) ASSERT( __builtin_choose_expr ( builtin_types_compatible(typeof(e), typeof(a)), is_element_of_array((e), (a), (n), sizeof(*a)), (void)0 ) )
+static inline int in_buff (const void* const thing, const u64 thingSize, const void* const buff, const u64 buffSize2)
+    { return buff <= thing && (thing + thingSize) <= (buff + buffSize2); }
 
 // E É UM ELEMENTO DA ARRAY A, DE N ELEMENTOS DE TAMANHO S
 static inline int is_element_of_array (const void* const e, const void* const a, const u64 n, const u64 s)
     { return (a <= e) && (e < (a + n*s)) && ((uintptr_t)e % sizeof(s)) == 0; }
+
+// PROTEGE A FUNCAO
+#define is_element_of_array(e, a, n) __builtin_choose_expr ( builtin_types_compatible(typeof(e), typeof(a)), is_element_of_array((e), (a), (n), sizeof(*a)), (void)0 )
+
+// TODO: FIXME: tem que confirmar que os tipos são os mesmos: e
+#define assert_is_element_of_array(e, a, n) ASSERT( is_element_of_array(e, a, n) )
+
+#define assert_in_buff(thing, thingSize, buff, buffSize) ASSERT(in_buff((thing), (thingSize), (buff), (buffSize2)))
