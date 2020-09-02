@@ -329,14 +329,14 @@ static inline void f_fill_and_register (void* const chunk, const u64 size) {
     assert_c_size(size);
 
     // FILL
-    f_st_size (chunk, size);
-    f_st_size2(chunk, size); void** const ptr = f_ptr_root_put(size);
-    f_st_ptr  (chunk,  ptr);
-    f_st_next (chunk, *ptr);
+    f_set_size (chunk, size);
+    f_set_size2(chunk, size); void** const ptr = f_ptr_root_put(size);
+    f_set_ptr  (chunk,  ptr);
+    f_set_next (chunk, *ptr);
 
     // REGISTER
     if (*ptr)
-        f_st_ptr(*ptr, f_ld_next_(chunk));
+        f_set_ptr(*ptr, f_get_next_(chunk));
     *ptr = chunk;
 
     // CONFIRMA QUE LÊ DE VOLTA A MESMA INFORMAÇÃO
@@ -345,9 +345,7 @@ static inline void f_fill_and_register (void* const chunk, const u64 size) {
     //ASSERT(ptr  == f_ld_ptr  (chunk));
     //ASSERT(*ptr == f_ld_next (chunk));
 
-    assert_c_size(c_ld_size(chunk));
-    assert_c_size(c_ld_size2(chunk), c_ld_size(chunk));
-    assert_f_link(chunk);
+    assert_f(chunk);
 }
 
 // TODO: FIXME: rename to unregister
@@ -506,9 +504,24 @@ void dedipy_free (void* const data) {
 }
 
 #define assert_c(c) (c_is_free(c) ? assert_f(c) : assert_u(c))
-#define assert_u(c) (assert_addr_in_chunks(c) && assert_u_is(c) && assert_u_size(c))
-#define assert_f(c) (assert_addr_in_chunks(c) && assert_f_is(c) && assert_f_size(c) && assert_f_link(c))
+#define assert_u(c) (assert_addr_in_chunks(c) && assert_u_is(c) && assert_u_size(c) && assert_u_size2(c) && assert_u_sizes(c))
+#define assert_f(c) (assert_addr_in_chunks(c) && assert_f_is(c) && assert_f_size(c) && assert_f_size2(c) && assert_f_sizes(c) && assert_f_ptr(c) && assert_f_next(c))
 
+// VERIFICA AMBOS
+static inline int assert_f_sizes(const void* const c) {
+    // o primeiro eh valido?
+    // OS DOIS SAO IGUAIS?
+    return is_from_to(C_SIZE_MIN, f_get_size(c), C_SIZE_MAX) && f_get_size(c) == f_get_size2(c, f_get_size(c));
+}
+
+#define assert_f_sizes(value) ASSERT( assert_f_sizes(value) )
+
+// ASSIM COMO UMA FUNCAO, EXECUTA OS DOIS ANTES DE EXECUTAR!!!
+#define is_from_to_(min, value, max) ({ const typeof(a)__value = (value); ((__min) <= __value && __value <= (__max) })
+
+SEPARAR O assert_f_link(c) EM PTR E NEXT
+
+assert_f_link ja verifica se o ptr e next sao oks tb
 
 void dedipy_main (void) {
 
