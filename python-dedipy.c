@@ -472,16 +472,11 @@ static void VERIFY (void) {
 
 void dedipy_free (void* const data) {
 
-    dbg2("=== FREE(BX%llX) ========================================================================", BOFFSET(data));
-
-    VERIFY();
-
     if (data) {
         // VAI PARA O COMEÇO DO CHUNK
         void* chunk = u_from_data(data);
 
-        ASSERT(c_is_free(chunk) == 0);
-        ASSERT(c_ld_size(chunk) <= C_SIZE_MAX);
+        assert_u(chunk);
 
         u64 size = u_ld_size(chunk);
 
@@ -490,8 +485,7 @@ void dedipy_free (void* const data) {
 
         if (c_is_free(left)) {
             size += f_ld_size(left);
-            chunk = left;
-            f_remove(chunk);
+            f_remove((chunk = left));
         }
 
         // JOIN WITH THE RIGHT CHUNK
@@ -502,10 +496,19 @@ void dedipy_free (void* const data) {
             f_remove(right);
         }
 
+        assert_c_size(size);
+
         //
         f_fill_and_register(chunk, size);
+
+        assert_f(chunk);
     }
 }
+
+#define assert_c(c) (c_is_free(c) ? assert_f(c) : assert_u(c))
+#define assert_u(c) (assert_addr_in_chunks(c) && assert_u_is(c) && assert_u_size(c))
+#define assert_f(c) (assert_addr_in_chunks(c) && assert_f_is(c) && assert_f_size(c) && assert_f_link(c))
+
 
 void dedipy_main (void) {
 
