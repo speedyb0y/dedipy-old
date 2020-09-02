@@ -66,6 +66,8 @@ static inline u64 rdtsc(void) {
 
 // TODO: FIXME: builtion choose expression -> int 0 / 1
 
+
+// TODO: FIXME: usando o builtin choose expression, se for constante expression, verificar em compile time =]
 #define ASSERT(condition) ({ if (!(condition)) { write(STDERR_FILENO, "\n" __FILE__ ":" LINE(__LINE__) " ASSERT FAILED: " #condition "\n", sizeof("\n" __FILE__ ":" LINE(__LINE__) " ASSERT FAILED: " #condition "\n")); abort(); } })
 
 // TODO: FIXME: :S
@@ -88,3 +90,17 @@ static inline u64 rdtsc(void) {
 #define _FORCE(t, c) __builtin_choose_expr(__builtin_types_compatible_p(t, typeof(c)), (c), (void)0)
 
 #define FORCE_U64(c) _FORCE(u64, c)
+
+// typeof(sizeof(int))
+
+static inline int addr_in (const void* const addr, const u64 size, const void* const addr2, const u64 size2)
+    { return addr2 <= addr && (addr + size) <= (addr2 + size2); }
+
+#define assert_addr_in(addr, size, addr2, size2) ASSERT(addr_in((addr), (size), (addr2), (size2)))
+
+// TODO: FIXME: tem que confirmar que os tipos são os mesmos: e
+#define assert_is_element_of_array(e, a, n) ASSERT( __builtin_choose_expr ( builtin_types_compatible(typeof(e), typeof(a)), is_element_of_array((e), (a), (n), sizeof(*a)), (void)0 ) )
+
+// E É UM ELEMENTO DA ARRAY A, DE N ELEMENTOS DE TAMANHO S
+static inline int is_element_of_array (const void* const e, const void* const a, const u64 n, const u64 s)
+    { return (a <= e) && (e < (a + n*s)) && ((uintptr_t)e % sizeof(s)) == 0; }
