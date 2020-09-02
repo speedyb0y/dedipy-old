@@ -15,9 +15,8 @@ INITIAL = -28
 # PARA FICAR UNIFORME TEM QUE SER X_DIVISOR = (X_COUNT*X_SALT)
 X_INICIAL = 32 # (ISSO - 1) -> QUANTOS FICAM NO MEIO ENTRE A ... 2*A
 X_SALT = 1
-X_ACELERACAO = 4
+X_ACELERACAO = 7
 # 32 40 48 56 64 72 80 88 96 104 112 120 128 136 144 152 160 168 176 184 192 200 208 216 224 232 240 248 256 264 272 280 288 296 312 320 336 352 360 376 384 400 416 424 440 448 464 480 488 504 512 528 544 552 568 576 592 608 616 632 640 656 672 680 696 704 720 736 744 760 768 784 800 816 840 856 880 896 920 936 960 984 1000 1024
-# 32 40 48 56 64 72 80 88 96 104 112 120 128 136 144 152 160 168 176 184 192 200 208 216 224 232 240 248 256 264 272 280 288 296 304 320 328 336 352 360 368 384 392 400 416 424 432 448 456 464 480 488 496 512 520 528 544 552 560 576 584 592 608 616 624 640 648 656 672 680 688 704 712 720 736 744 752 768 776 784 800 808 824 840 856 864 880 896 912 928 936 952 968 984 992 1008 1024 1k 1k 1k 1k 1k 1k 1
 
 def sequence():
 
@@ -39,7 +38,7 @@ def sequence():
                 return
             x += X_SALT
 
-        X_DIVISOR += ((2*X_DIVISOR)//X_ACELERACAO) # a velocidade aumenta a cada X_ACELERACAO vezes
+        X_DIVISOR += X_DIVISOR//X_ACELERACAO + X_DIVISOR//64 + X_DIVISOR//230 # a velocidade aumenta a cada X_ACELERACAO vezes
 
         n += 1
 X_DIVISOR = X_INICIAL
@@ -91,8 +90,8 @@ UNITS=8
 # O MÁXIMO TEM DE SER GARANTIDO
 
 
-print(' '.join((((f'{x//(1024*1024*1024)}g' if x > 1024*1024 else f'{x//(1024*1024)}m') if x > 1024*1024 else f'{x//1024}k') if x > 1024 else f'{x}') for x in (x*UNITS for x in SEQUENCE)))
-
+print(' '.join((((f'{x//(1024*1024*1024)}g' if x > 1024*1024*1024 else f'{x//(1024*1024)}m') if x > 1024*1024 else f'{x//1024}k') if x > 1024 else f'{x}') for x in (x*UNITS for x in SEQUENCE)))
+# print([x*8 for x in SEQUENCE])
 # roots pequenos representam o proximo livre
 
 # os pequenos representam
@@ -100,3 +99,11 @@ print(' '.join((((f'{x//(1024*1024*1024)}g' if x > 1024*1024 else f'{x//(1024*10
 # usar prefetches
 # pode usar simd etc
 assert C_SIZE_MIN <= ROOTS_SIZES_0 < C_SIZE_MAX <= ROOTS_SIZES_N <= (1 << 64)
+
+
+
+
+# SE ALOCA MUITO, NAO TEM PROBLEMA POLUIR O CACHE
+#       -> desde que bem utilizado e que continue la
+# SE ALOCA POUCO, NAO TEM PROBLEMA DEMORAR UM POUCO MAIS
+#
