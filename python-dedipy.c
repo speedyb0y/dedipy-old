@@ -223,7 +223,8 @@ static inline void assert_c_size (const u64 s) {
 
 // OS DOIS DEVEM SER SETADOS JUNTOS
 static inline void assert_c_sizes (const chunk_s* const c) {
-    assert ( is_from_to(C_SIZE_MIN, c_size_decode(c->size), C_SIZE_MAX) && c->size == C_SIZE2(c, c_size_decode(c->size)) );
+    assert ( is_from_to(C_SIZE_MIN, c_size_decode(c->size), C_SIZE_MAX) );
+    assert ( c->size == C_SIZE2(c, c_size_decode(c->size)) );
 }
 
 static inline void assert_c_ptr (const chunk_s* const c) {
