@@ -176,20 +176,20 @@ static inline u64 c_size_decode_free (chunk_size_t s) {
     return s;
 }
 
-static inline chunk_size_t c_size_encode_free (const u64 s) {
-    assert ( (s & 1ULL) == 0ULL );
-    assert ( s >= C_SIZE_MIN );
-    assert ( s <= C_SIZE_MAX );
-    assert ( s % 8 == 0 );
-    return s | 1ULL;
-}
-
 static inline u64 c_size_decode_used (const chunk_size_t s) {
     assert ( (s & 1ULL) == 0ULL );
     assert ( s % 8 == 0 );
     assert ( s >= C_SIZE_MIN );
     assert ( s <= C_SIZE_MAX );
     return s;
+}
+
+static inline chunk_size_t c_size_encode_free (const u64 s) {
+    assert ( (s & 1ULL) == 0ULL );
+    assert ( s >= C_SIZE_MIN );
+    assert ( s <= C_SIZE_MAX );
+    assert ( s % 8 == 0 );
+    return s | 1ULL;
 }
 
 static inline chunk_size_t c_size_encode_used (const u64 s) {
