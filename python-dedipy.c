@@ -228,25 +228,25 @@ static inline chunk_s* c_right (const chunk_s* const c, u64 s) {
 
 static inline void assert_in_buff (const void* const a, const u64 s) {
     assert_c_size_is_decoded (s);
-    assert ( in_mem(a, s, buff, buffSize) );
+    assert(in_mem(a, s, buff, buffSize));
 }
 
 static inline void assert_in_chunks (const void* const addr, const u64 s) {
-    assert_c_size_is_decoded (s);
-    assert ( in_mem(addr, s, BUFF_CHUNKS, BUFF_CHUNKS_SIZE) );
+    assert_c_size_is_decoded(s);
+    assert(in_mem(addr, s, BUFF_CHUNKS, BUFF_CHUNKS_SIZE));
 }
 
 static inline void assert_c_size (const u64 s) {
     assert_c_size_is_decoded (s);
     assert ( C_SIZE_MIN <= s );
-    assert_aligned ( (void*)s , CHUNK_ALIGNMENT );
+    assert_aligned((void*)s , CHUNK_ALIGNMENT);
 }
 
 // OS DOIS DEVEM SER LIDADOS DE FORMA SÍNCRONA
 static inline void assert_c_sizes (const chunk_s* const c) {
-    assert ( c_size_decode_is_free(c->size) == !!c_size_decode_is_free(c->size) );
-    assert ( C_SIZE_MIN <= c_size_decode(c->size) );
-    assert ( c->size == c_size2(c, c_size_decode(c->size)) );
+    assert(c_size_decode_is_free(c->size) == !!c_size_decode_is_free(c->size));
+    assert(C_SIZE_MIN <= c_size_decode(c->size));
+    assert(c->size == c_size2(c, c_size_decode(c->size)));
 }
 
 static inline void assert_c_ptr (const chunk_s* const c) {
@@ -257,20 +257,20 @@ static inline void assert_c_ptr (const chunk_s* const c) {
 
 static inline void assert_c_next (const chunk_s* const c) {
     if (c->next) {
-        assert_aligned ( c->next, 8 );
-        assert_in_chunks ( c->next, c->next->size );
-        assert ( &c->next == c->next->ptr );
+        assert_aligned(c->next, 8);
+        assert_in_chunks(c->next, c->next->size);
+        assert(&c->next == c->next->ptr);
     }
 }
 
 static inline void assert_c_size_free (const chunk_size_t s) {
     assert_c_size_is_encoded (s);
-    assert ( c_size_decode_free(s) );
+    assert(c_size_decode_free(s));
 }
 
 static inline void assert_c_size_used (const chunk_size_t s) {
-    assert_c_size_is_encoded (s);
-    assert ( c_size_decode_used(s) );
+    assert_c_size_is_encoded(s);
+    assert(c_size_decode_used(s));
 }
 
 #define assert_c_data(c, d) assert ( c_data(c) == (d) )
@@ -283,12 +283,12 @@ static inline void assert_c_used (const chunk_s* const c) {
 }
 
 static inline void assert_c_free (const chunk_s* const c) {
-    assert_in_chunks ( c, c_size_decode_free(c->size) );
-    assert_c_size_free (c->size);
-    assert_c_size (c_size_decode_free(c->size));
-    assert_c_sizes (c);
-    assert_c_ptr (c);
-    assert_c_next (c);
+    assert_in_chunks(c, c_size_decode_free(c->size));
+    assert_c_size_free(c->size);
+    assert_c_size(c_size_decode_free(c->size));
+    assert_c_sizes(c);
+    assert_c_ptr(c);
+    assert_c_next(c);
 }
 
 static inline void assert_c (const chunk_s* const c) {
@@ -299,7 +299,7 @@ static inline void assert_c (const chunk_s* const c) {
 }
 
 static inline void c_clear (chunk_s* const c, const u64 s) {
-    assert_c_size_is_decoded (s);
+    assert_c_size_is_decoded(s);
 #if 0
     memset(c, 0, s);
 #endif
@@ -326,37 +326,29 @@ static inline void* c_data (chunk_s* const c) {
     return d;
 }
 
-static inline chunk_s* c_from_data__ (void* const d) {
-    return d - sizeof(chunk_size_t);
-}
-
 static inline chunk_s* c_from_data (void* const d) {
-    assert_c_data(c_from_data__(d), d);
-    return c_from_data__(d);
-}
-
-static inline u64 c_data_size__ (const u64 s) {
-    return s - sizeof(chunk_s) - sizeof(chunk_size_t);
+    assert_c_data((d - sizeof(chunk_size_t)), d);
+    return d - sizeof(chunk_size_t);
 }
 
 // DATA SIZE FROM THE CHUNK SIZE
 static inline u64 c_data_size (const u64 s) {
     assert_c_size(s);
-    return c_data_size__(s);
+    return s - sizeof(chunk_s) - sizeof(chunk_size_t);
 }
 
 static inline void c_set_sizes_free (chunk_s* const c, const u64 s) {
     assert_c_size_is_decoded(s);
-    assert_c_size ( s );
+    assert_c_size(s);
     *(chunk_size_t*)((void*)c + s - sizeof(chunk_size_t)) = c->size = c_size_encode_free(s);
-    assert_c_sizes ( c );
+    assert_c_sizes(c);
 }
 
 static inline void c_set_sizes_used (chunk_s* const c, const u64 s) {
-    assert_c_size_is_decoded ( s );
-    assert_c_size ( s );
+    assert_c_size_is_decoded(s);
+    assert_c_size(s);
     *(chunk_size_t*)((void*)c + s - sizeof(chunk_size_t)) = c->size = c_size_encode_used(s);
-    assert_c_sizes ( c );
+    assert_c_sizes(c);
 }
 
 // TODO: FIXME: outra verificação, completa
@@ -881,7 +873,7 @@ void dedipy_main (void) {
     dbg("BUFF_ROOTS BX%llX",        BOFFSET(BUFF_ROOTS));
     dbg("BUFF_L BX%llX",            BOFFSET(BUFF_L));
     dbg(" BUFF_CHUNKS BX%llX",      BOFFSET(BUFF_CHUNKS));
-    dbg(" BUFF_CHUNKS SIZE %llu",   (uintll)(c_size_decode_free(BUFF_CHUNKS->size)));
+    //dbg(" BUFF_CHUNKS SIZE %llu",   (uintll)(c_size_decode_free(BUFF_CHUNKS->size)));
     dbg(" BUFF_CHUNKS PTR BX%llX",  BOFFSET( BUFF_CHUNKS->ptr));
     dbg("*BUFF_CHUNKS PTR BX%llX",  BOFFSET(*BUFF_CHUNKS->ptr));
     dbg(" BUFF_CHUNKS NEXT BX%llX", BOFFSET( BUFF_CHUNKS->next));
