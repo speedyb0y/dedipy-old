@@ -496,34 +496,32 @@ void dedipy_free (void* const data) {
 
     if (data) {
         // VAI PARA O COMEÇO DO CHUNK
-        void* chunk = c_from_data(data);
+        chunk_s* c = c_from_data(data);
 
-        assert_c_used ( chunk );
+        assert_c_used ( c );
 
-        u64 size = c_size_decode_used(chunk->size);
+        u64 size = c_size_decode_used(c->size);
 
         // JOIN WITH THE LEFT CHUNK
-        void* const left = c_left(chunk);
+        void* const l = c_left(c);
 
-        if (c_is_free(left)) {
-            size += c_size_decode(left->size);
-            c_unlink((chunk = left));
+        if (c_is_free(l)) {
+            size += c_size_decode_free(l->size);
+            c_unlink((c = l));
         }
 
-        // JOIN WITH THE RIGHT CHUNK
-        void* const right = c_right(chunk, size);
+        // JOIN WITH THE r CHUNK
+        void* const r = c_right(c, size);
 
-        if (c_is_free(right)) {
-            size += f_get_size(right);
-            c_unlink(right);
+        if (c_is_free(r)) {
+            size += c_size_decode_free(r->size);
+            c_unlink(r);
         }
-
-        assert_c_size ( size );
 
         //
-        c_free_fill_and_register(chunk, size);
+        c_free_fill_and_register(c, size);
 
-        assert_c_free ( chunk );
+        assert_c_free ( c );
     }
 }
 
