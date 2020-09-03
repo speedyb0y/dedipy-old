@@ -46,11 +46,11 @@
 #define _GNU_SOURCE 1
 
 #ifndef _LARGEFILE64_SOURCE
-#error "_LARGEFILE64_SOURCE IS NOT DEFINED"
+#error
 #endif
 
 #if _FILE_OFFSET_BITS != 64
-#error "BAD #define _FILE_OFFSET_BITS"
+#error
 #endif
 
 #define DBG_PREPEND "WORKER [%u] "
@@ -898,6 +898,10 @@ static inline u64 TEST_SIZE (u64 x) {
 void dedipy_test (void) {
 
 #if DEDIPY_TEST
+
+    assert ( malloc(0) == NULL );
+    assert ( free(NULL) );
+
     // PRINT HOW MUCH MEMORY WE CAN ALLOCATE
     { u64 blockSize = 64*4096; // >= sizeof(void**)
 
