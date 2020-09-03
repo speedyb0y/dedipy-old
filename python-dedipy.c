@@ -352,8 +352,8 @@ static inline chunk_s** root_put_ptr (u64 size) {
         idx++;
     }
 
-    if (idx >= ROOTS_N)
-        idx = ROOTS_N - 1;
+    if (idx > (ROOTS_N - 1))
+        idx = (ROOTS_N - 1);
 
     // O ATUAL NÃO PROVIDENCIAMOS, ENTÃO RETIRA 1
     //idx--;
@@ -361,6 +361,34 @@ static inline chunk_s** root_put_ptr (u64 size) {
     dbg("CHOSE INDEX %u", idx);
 
     dbg("ROOTS SIZES[%u] = %llu", idx, (uintll)rootSizes[idx]);
+
+    // vainos masks
+    const u64* mask = masks + (idx / ((sizeof(u64) * 8)));
+
+    //if ((ID = nzeroesright(( *mask >> (idx % ((sizeof(u64) * 8))) ))))  {
+    if (nzeroesright(mask) > (idx % ((sizeof(u64) * 8)))) { // ??
+        // ACHOU UM QUE SATISFAZ
+    } else {
+        // NENHUM SATISFAZ
+        // procura em todos os masks daqui em diante entao
+        while (){ mask++;
+
+            // MAS LEMBRA A MASK ATUAL
+
+        } // DEIXA UM DUMMY DEPOIS DOS MASKS PARA FORÇAR A QUEBRA DESTE LOOP
+        if (mask == MASKS_LMT) {
+            // NAO ENCONTROU NENHUM CHUNK LIVRE
+        }
+    }
+
+    retira os % do idx,  e isso +
+    (mask - MASKS) ;
+
+    if (idx == (ROOTS_N - 1)) {
+        // ENCONTRA O MENOR CHUNK POSSÍVEL QUE SATISFAÇA
+        // .... ou o igual =]
+        // no PUT, poe logo no começo mesmo
+    }
 
     return BUFF_ROOTS + idx;
 }
@@ -393,8 +421,8 @@ static inline chunk_s** root_get_ptr (u64 size) {
         idx++;
     }
 
-    if (idx >= ROOTS_N)
-        idx = ROOTS_N - 1;
+    if (idx > (ROOTS_N - 1))
+        idx = (ROOTS_N - 1);
 
     // TEM QUE ADICOIONAR 1 AQUI?
     dbg("CHOSE INDEX %u", idx);
