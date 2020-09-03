@@ -156,12 +156,12 @@ static int buffFD;
 #endif
 
 static inline void assert_c_size_is_decoded (const u64 s) {
-    dbg("assert_c_size_is_decoded (%llu) == %d", (uintll)s, ((s & C_FLAGS) == 0UL) );
+    dbg("assert_c_size_is_decoded (%llu) == %llu", D(s), D((s & C_FLAGS) == 0UL) );
     assert ( (s & C_FLAGS) == 0ULL );
 }
 
 static inline void assert_c_size_is_encoded (const chunk_size_t s) {
-    dbg("assert_c_size_is_encoded (%llu) == %llu", (uintll)s, (uintll)(s & C_FLAGS_) );
+    dbg("assert_c_size_is_encoded (%llu) == %llu", D(s), D(s & C_FLAGS_) );
     assert ( s & C_FLAGS_ );
 }
 
@@ -170,13 +170,13 @@ static inline chunk_size_t c_size2__ (const chunk_s* const c, const u64 s) {
 }
 
 static inline chunk_size_t c_size2 (const chunk_s* const c, const u64 s) {
-    dbg("c_size2(BX%llX, %llu) = %llu", BOFFSET(c), (uintll)s, (uintll)c_size2__(c, s));
+    dbg("c_size2(BX%llX, %llu) = %llu", BOFFSET(c), D(s), D(c_size2__(c, s)));
     assert_c_size_is_decoded (s);
     return c_size2__(c, s);
 }
 
 static inline u64 c_size_decode_is_free (const chunk_size_t s) {
-    dbg("c_size_decode_is_free(%llu) = %llu", (uintll)s, (uintll)(s & C_FLAG_FREE));
+    dbg("c_size_decode_is_free(%llu) = %llu", D(s), D(s & C_FLAG_FREE));
     assert_c_size_is_encoded (s);
     return s & C_FLAG_FREE;
 }
@@ -187,7 +187,7 @@ static inline u64 c_size_decode__ (const chunk_size_t s) {
 }
 
 static inline u64 c_size_decode (const chunk_size_t s) {
-    dbg("c_size_decode(%llu) -> %llu", (uintll)s, (uintll)c_size_decode__(s));
+    dbg("c_size_decode(%llu) -> %llu", D(s), D(c_size_decode__(s)));
     assert_c_size_is_encoded (s);
     assert ( (s & ~1ULL) >= C_SIZE_MIN || (s & ~1ULL) == BUFF_LR_VALUE ); //  BUFF_LR_VALUE sem a flag de used
     assert ( (s & ~1ULL) % 8 == 0 || (s & ~1ULL) == BUFF_LR_VALUE );
@@ -199,7 +199,7 @@ static inline u64 c_size_decode_free__ (const chunk_size_t s) {
 }
 
 static inline u64 c_size_decode_free (const chunk_size_t s) {
-    dbg("c_size_decode_free(%llu) -> %llu", (uintll)s, (uintll)c_size_decode_free__(s));
+    dbg("c_size_decode_free(%llu) -> %llu", D(s), D(c_size_decode_free__(s)));
     assert_c_size_is_encoded (s);
     assert ( (s &  1ULL) == 1ULL );
     assert ( (s & ~1ULL) >= C_SIZE_MIN );
@@ -212,7 +212,7 @@ static inline u64 c_size_decode_used__ (const chunk_size_t s) {
 }
 
 static inline u64 c_size_decode_used (const chunk_size_t s) {
-    dbg("c_size_decode_used(%llu) -> %llu", (uintll)s, (uintll)c_size_decode_used(s));
+    dbg("c_size_decode_used(%llu) -> %llu", D(s), D(c_size_decode_used__(s)));
     assert_c_size_is_decoded (s);
     assert ( (s & 1ULL) == 0ULL );
     assert ( s >= C_SIZE_MIN );
@@ -225,7 +225,7 @@ static inline chunk_size_t c_size_encode_free__ (const u64 s) {
 }
 
 static inline chunk_size_t c_size_encode_free (const u64 s) {
-    dbg("c_size_encode_free(%llu) -> %llu", (uintll)s, (uintll)c_size_encode_free__(s));
+    dbg("c_size_encode_free(%llu) -> %llu", D(s), D(c_size_encode_free__(s)));
     assert_c_size_is_decoded (s);
     assert ( (s & 1ULL) == 0ULL );
     assert ( s >= C_SIZE_MIN );
@@ -238,7 +238,7 @@ static inline chunk_size_t c_size_encode_used__ (const u64 s) {
 }
 
 static inline chunk_size_t c_size_encode_used (const u64 s) {
-    dbg("c_size_encode_used(%llu) -> %llu", (uintll)s, (uintll)c_size_encode_used__(s));
+    dbg("c_size_encode_used(%llu) -> %llu", D(s), D(c_size_encode_used__(s)));
     assert_c_size_is_decoded (s);
     assert ( (s & 1ULL) == 0ULL );
     assert ( s % 8 == 0 );
@@ -277,21 +277,21 @@ static inline void assert_c_size (const u64 s) {
 
 // OS DOIS DEVEM SER LIDADOS DE FORMA SÍNCRONA
 static inline void assert_c_sizes (const chunk_s* const c) {
-    dbg("assert_c_sizes(BX%llX)", BOFFSET(c));
+    dbg("assert_c_sizes(BX%llX)", D(c));
     assert ( c_size_decode_is_free(c->size) == !!c_size_decode_is_free(c->size) );
     assert ( C_SIZE_MIN <= c_size_decode(c->size) );
     assert ( c->size == c_size2(c, c_size_decode(c->size)) );
 }
 
 static inline void assert_c_ptr (const chunk_s* const c) {
-    dbg("assert_c_ptr(BX%llX)", BOFFSET(c));
+    dbg("assert_c_ptr(BX%llX)", D(c));
     assert_in_buff(c->ptr, sizeof(*c->ptr));
     assert(c->ptr);
     assert(*c->ptr == c);
 }
 
 static inline void assert_c_next (const chunk_s* const c) {
-    dbg("assert_c_next(BX%llX)", BOFFSET(c));
+    dbg("assert_c_next(BX%llX)", D(c));
     if (c->next) {
         assert_aligned ( c->next, 8 );
         assert_in_chunks ( c->next, c->next->size );
@@ -300,13 +300,13 @@ static inline void assert_c_next (const chunk_s* const c) {
 }
 
 static inline void assert_c_size_free (const chunk_size_t s) {
-    dbg("assert_c_size_free(%llu)", (uintll)s);
+    dbg("assert_c_size_free(%llu)", D(s));
     assert_c_size_is_encoded (s);
     assert ( c_size_decode_free(s) );
 }
 
 static inline void assert_c_size_used (const chunk_size_t s) {
-    dbg("assert_c_size_used(%llu)", (uintll)s);
+    dbg("assert_c_size_used(%llu)", D(s));
     assert_c_size_is_encoded (s);
     assert ( c_size_decode_used(s) );
 }
@@ -314,7 +314,7 @@ static inline void assert_c_size_used (const chunk_size_t s) {
 #define assert_c_data(c, d) assert ( c_data(c) == (d) )
 
 static inline void assert_c_used (const chunk_s* const c) {
-    dbg("assert_c_used(BX%llX)", BOFFSET(c));
+    dbg("assert_c_used(BX%llX)", D(c));
     assert_in_chunks(c, c_size_decode_used(c->size));
     assert_c_size_used(c->size);
     assert_c_size(c_size_decode_used(c->size));
@@ -322,7 +322,7 @@ static inline void assert_c_used (const chunk_s* const c) {
 }
 
 static inline void assert_c_free (const chunk_s* const c) {
-    dbg_call("assert_c_free(BX%llX)", BOFFSET(c));
+    dbg_call("assert_c_free(BX%llX)", D(c));
     assert_in_chunks ( c, c_size_decode_free(c->size) );
     assert_c_size_free (c->size);
     assert_c_size (c_size_decode_free(c->size));
@@ -333,7 +333,7 @@ static inline void assert_c_free (const chunk_s* const c) {
 }
 
 static inline void assert_c (const chunk_s* const c) {
-    dbg_call("assert_c(BX%llX)", BOFFSET(c));
+    dbg_call("assert_c(BX%llX)", D(c));
     if (c_size_decode_is_free(c->size))
         assert_c_free(c);
     else
@@ -375,7 +375,7 @@ static inline chunk_s* c_from_data__ (void* const d) {
 }
 
 static inline chunk_s* c_from_data (void* const d) {
-    dbg("c_from_data(BX%llX) -> BX%llX", BOFFSET(d), BOFFSET(c_from_data__(d)));
+    dbg("c_from_data(BX%llX) -> BX%llX", D(d), D(c_from_data__(d)));
     assert_c_data(c_from_data__(d), d);
     return c_from_data__(d);
 }
@@ -386,13 +386,13 @@ static inline u64 c_data_size__ (const u64 s) {
 
 // DATA SIZE FROM THE CHUNK SIZE
 static inline u64 c_data_size (const u64 s) {
-    dbg("c_data_size(%llu) -> %llu", (uintll)s, (uintll)c_data_size__(s));
+    dbg("c_data_size(%llu) -> %llu", D(s), D(c_data_size__(s)));
     assert_c_size(s);
     return c_data_size__(s);
 }
 
 static inline void c_set_sizes_free (chunk_s* const c, const u64 s) {
-    dbg_call("c_set_sizes_free(BX%llX, %llu)", BOFFSET(c), (uintll)s);
+    dbg_call("c_set_sizes_free(BX%llX, %llu)", D(c), D(s));
     assert_c_size_is_decoded(s);
     assert_c_size ( s );
     *(chunk_size_t*)((void*)c + s - sizeof(chunk_size_t)) = c->size = c_size_encode_free(s);
@@ -401,7 +401,7 @@ static inline void c_set_sizes_free (chunk_s* const c, const u64 s) {
 }
 
 static inline void c_set_sizes_used (chunk_s* const c, const u64 s) {
-    dbg_call("c_set_sizes_used(BX%llX, %llu)", BOFFSET(c), (uintll)s);
+    dbg_call("c_set_sizes_used(BX%llX, %llu)", D(c), D(s));
     assert_c_size_is_decoded ( s );
     assert_c_size ( s );
     *(chunk_size_t*)((void*)c + s - sizeof(chunk_size_t)) = c->size = c_size_encode_used(s);
@@ -428,7 +428,7 @@ static inline void c_set_sizes_used (chunk_s* const c, const u64 s) {
 // SOMENTE A LIB USA ISSO, ENTAO NAO PRECISA DE TANTAS CHEGAGENS?
 static inline chunk_s** root_put_ptr (u64 size) {
 
-    dbg_call("FOR SIZE %llu", (uintll)size);
+    dbg_call("FOR SIZE %llu", D(size));
 
     assert_c_size(size);
 
@@ -494,13 +494,13 @@ static inline chunk_s** root_put_ptr (u64 size) {
     }
 #endif
 
-    dbg_ret("BX%llX", BOFFSET(BUFF_ROOTS + idx));
+    dbg_ret("BX%llX", D(BUFF_ROOTS + idx));
     return BUFF_ROOTS + idx;
 }
 
 static inline uint root_get_ptr_index (u64 size) {
 
-    dbg_call("root_get_ptr_index (%llu)", (uintll)size);
+    dbg_call("root_get_ptr_index (%llu)", D(size));
 
     assert ( size >= ROOTS_SIZES_0 );
 
@@ -551,9 +551,9 @@ static inline chunk_s** root_get_ptr (u64 size) {
 
 static inline chunk_s* c_free_fill_and_register (chunk_s* const c, const u64 size) {
 
-    dbg_call("c_free_fill_and_register(BX%llX, %llu)", BOFFSET(c), (uintll)size);
+    dbg_call("c_free_fill_and_register(BX%llX, %llu)", D(c), D(size));
 
-    dbg("FILLING AND REGISTERING CHUNK BX%llX WITH SIZE %llu", BOFFSET(c), (uintll)size);
+    dbg("FILLING AND REGISTERING CHUNK BX%llX WITH SIZE %llu", D(c), D(size));
 
     assert_c_size(size);
     assert_c_size_is_decoded(size);
@@ -678,7 +678,7 @@ static void dedipy_verify (void) {
 
 void* dedipy_malloc (const size_t size_) {
 
-    dbg_call("MALLOC(%llu)", (uintll)size_);
+    dbg_call("MALLOC(%llu)", D(size_));
 
     // CONSIDERA O CHUNK INTEIRO, E O ALINHA
     u64 size = C_SIZE_FROM_DATA_SIZE(size_);
@@ -713,15 +713,15 @@ void* dedipy_malloc (const size_t size_) {
 
     // SE DER, CONSOME SÓ UMA PARTE, NO FINAL DELE
     if (C_SIZE_MIN <= freeSizeNew) {
-        dbg("CONSUMINDO O DA DIREITA CHUNK BX%llX SIZE %llu --> NEW SIZE %llu", BOFFSET(used), (uintll)usedSize, (uintll)freeSizeNew);
+        dbg("CONSUMINDO O DA DIREITA CHUNK BX%llX SIZE %llu --> NEW SIZE %llu", D(used), D(usedSize), D(freeSizeNew));
         used = c_right(c_free_fill_and_register(used, freeSizeNew), freeSizeNew);
         usedSize = size;
-        dbg("CHUNK RETIRADO: CHUNK BX%llX SIZE %llu", BOFFSET(used), (uintll)usedSize);
+        dbg("CHUNK RETIRADO: CHUNK BX%llX SIZE %llu", D(used), D(usedSize));
     }
 
     c_set_sizes_used(used, usedSize);
 
-    dbg_ret("CHUNK BX%llX DATA BX%llX SIZE %llu", BOFFSET(used), BOFFSET(c_data(used)), (uintll)c_size_decode_used(used->size));
+    dbg_ret("CHUNK BX%llX DATA BX%llX SIZE %llu", D(used), D(c_data(used)), D(c_size_decode_used(used->size)));
 
     assert_c_used(used);
 
@@ -745,7 +745,7 @@ void* dedipy_calloc (size_t n, size_t size_) {
 
 void dedipy_free (void* const data) {
 
-    dbg_call("FREE(BX%llX)", BOFFSET(data));
+    dbg_call("FREE(BX%llX)", D(data));
 
     if (data) {
         // VAI PARA O COMEÇO DO CHUNK
@@ -998,7 +998,7 @@ void dedipy_main (void) {
 // If realloc() fails, the original block is left untouched; it is not freed or moved.
 void* dedipy_realloc (void* const data_, const size_t dataSizeNew_) {
 
-    dbg_call("REALLOC(BX%llX, %llu)", BOFFSET(data_), (uintll)dataSizeNew_);
+    dbg_call("REALLOC(BX%llX, %llu)", D(data_), D(dataSizeNew_));
 
     if (data_ == NULL)
         return dedipy_malloc(dataSizeNew_);
