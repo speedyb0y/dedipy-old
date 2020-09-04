@@ -29,6 +29,8 @@
         BUFFER_MALLOC malloc_f_t malloc;
 
     NOTE: não vamos ter um C_DATA_MAX... pois nao vamos alocar nada próximo de 2^64 mesmo :/
+
+    // O ALGORITIMO PODE USAR AS FLAGS PARA COISAS MAIS INTELIGENTES :/
 */
 
 #ifndef DEDIPY_DEBUG
@@ -84,26 +86,31 @@
 
 #include "python-dedipy-defs.h"
 
-#define BUFF_ROOTS   ((chunk_s**)    (buff ))
-#define BUFF_L       ((chunk_size_t*)(buff + ROOTS_N*sizeof(void*) ))
-#define BUFF_CHUNKS  ((chunk_s*     )(buff + ROOTS_N*sizeof(void*) + sizeof(chunk_size_t)))
-#define BUFF_R       ((chunk_size_t*)(buff + buffSize - sizeof(chunk_size_t) ))
-#define BUFF_LMT                     (buff + buffSize )
+#define BUFF_ROOTS   ((chunk_s**)       (buff ))
+#define BUFF_L       ((chunk_size_enc_t*)(buff + ROOTS_N*sizeof(void*) ))
+#define BUFF_CHUNKS  ((chunk_s*        )(buff + ROOTS_N*sizeof(void*) + sizeof(chunk_size_enc_t)))
+#define BUFF_R       ((chunk_size_enc_t*)(buff + buffSize - sizeof(chunk_size_enc_t) ))
+#define BUFF_LMT                        (buff + buffSize )
 
 #define BUFF_ROOTS_SIZE (ROOTS_N*sizeof(void*))
-#define BUFF_L_SIZE sizeof(u64)
+#define BUFF_L_SIZE sizeof(chunk_size_enc_t)
 #define BUFF_CHUNKS_SIZE (buffSize - BUFF_ROOTS_SIZE - BUFF_L_SIZE - BUFF_R_SIZE) // É TODO O BUFFER RETIRANDO O RESTANTE
-#define BUFF_R_SIZE sizeof(u64)
+#define BUFF_R_SIZE sizeof(chunk_size_enc_t)
 
 // FOR DEBUGGING
 #define BOFFSET(x) ((uintll)((void*)(x) - (void*)BUFF_ADDR))
 
+typedef u64 data_size_t;
+
+typedef void* data_p;
+
 typedef u64 chunk_size_t;
+typedef u64 chunk_size_enc_t;
 
 typedef struct chunk_s chunk_s;
 
 struct chunk_s {
-    chunk_size_t size;
+    chunk_size_enc_t size;
     chunk_s** ptr; // SÓ TEM NO USED
     chunk_s* next; // SÓ TEM NO USED
 };
@@ -125,10 +132,10 @@ static int buffFD;
 
 // TAMANHO DE UM CHUNK COM TAL DATA SIZE, ALINHADO
 // NOTE: QUEREMOS TANTO OS DADOS QUANTO O CHUNK ALINHADOS; ALINHA AO QUE FOR MAIOR
-#define C_USED_SIZE__(ds) ((sizeof(chunk_size_t) + (u64)(ds) + (DATA_ALIGNMENT - 1) + sizeof(chunk_size_t)) & ~(DATA_ALIGNMENT - 1))
+#define C_USED_SIZE__(ds) ((sizeof(chunk_size_enc_t) + (ds) + (DATA_ALIGNMENT - 1) + sizeof(chunk_size_enc_t)) & ~(DATA_ALIGNMENT - 1))
 
 // O TAMANHO DO CHUNK TEM QUE CABER ELE QUANDO ESTIVER LIVRE
-#define c_size_from_data_size(ds) (C_USED_SIZE__(ds) > C_SIZE_MIN ? C_USED_SIZE__(ds) : C_SIZE_MIN)
+#define c_size_from_data_size(_ds) ((chunk_size_t)({ const chunk_size_t ds = _FORCE_TYPE(data_size_t, _ds); (C_USED_SIZE__(ds) > C_SIZE_MIN ? C_USED_SIZE__(ds) : C_SIZE_MIN); }))
 
 //  C_SIZE_MIN
 // FREE: SIZE + PTR + NEXT + ... + SIZE2
@@ -142,65 +149,58 @@ static int buffFD;
 // MAS TAMBÉM NÃO PODE SER EQUIVALENTE A UM PONTEIRO PARA UM CHUNK
 // TEM QUE SER USED, PARA QUE NUNCA TENTEMOS ACESSÁ-LO NA HORA DE JOIN LEFT/RIGHT
 // O MENOR TAMANHO POSSÍVEL; SE TENTARMOS ACESSAR ELE, VAMOS DESCOBRIR COM O assert SIZE >= MIN
-#define BUFF_LR_VALUE 2ULL // ass
+#define BUFF_LR_VALUE ((chunk_size_enc_t)C_FLAG_L) // ass
 
-#define C_FLAGS     0b1111ULL // usa todos os bits do alinhamento, assim pega demais erros
-#define C_FLAG_FREE 0b0001ULL // TEM QUE SER 1
-#if 1 // SÓ DEFINE SE FOR USADA
+#define C_FLAGS     0b1111ULL
+#define C_FLAG_FREE 0b0001ULL
 #define C_FLAG_USED 0b0010ULL
-#endif
+#define C_FLAG_L    0b0100ULL
+#define C_FLAG_R    0b1000ULL
 
-#define C_SIZE(_s)          ({ typeof(_s) s = (_s); assert (((s & C_FLAGS) ==        0ULL)  && ((s & ~C_FLAGS) % CHUNK_ALIGNMENT == 0) && ((s & ~C_FLAGS) >= C_SIZE_MIN)) ; s; })
-#define C_SIZE_ENCODED(_s)  ({ typeof(_s) s = (_s); assert (((s & C_FLAGS)               )  && ((s & ~C_FLAGS) % CHUNK_ALIGNMENT == 0) && ((s & ~C_FLAGS) >= C_SIZE_MIN)) ; s; })
-#define C_SIZE_FREE(_s)     ({ typeof(_s) s = (_s); assert (((s & C_FLAGS) == C_FLAG_FREE)  && ((s & ~C_FLAGS) % CHUNK_ALIGNMENT == 0) && ((s & ~C_FLAGS) >= C_SIZE_MIN)) ; s; })
-#define C_SIZE_USED(_s)     ({ typeof(_s) s = (_s); assert (((s & C_FLAGS) == C_FLAG_USED)  && ((s & ~C_FLAGS) % CHUNK_ALIGNMENT == 0) && ((s & ~C_FLAGS) >= C_SIZE_MIN)) ; s; })
+#define C_SIZE(s)          ({ const chunk_size_t     _s = _FORCE_TYPE(chunk_size_t,     s); assert(((_s & C_FLAGS) ==        0ULL)  && ((_s & ~C_FLAGS) % CHUNK_ALIGNMENT == 0) && ((_s & ~C_FLAGS) >= C_SIZE_MIN)) ; _s; })
+#define C_SIZE_ENCODED(s)  ({ const chunk_size_enc_t _s = _FORCE_TYPE(chunk_size_enc_t, s); assert(((_s & C_FLAGS)               )  && ((_s & ~C_FLAGS) % CHUNK_ALIGNMENT == 0) && ((_s & ~C_FLAGS) >= C_SIZE_MIN)) ; _s; })
+#define C_SIZE_FREE(s)     ({ const chunk_size_enc_t _s = _FORCE_TYPE(chunk_size_enc_t, s); assert(((_s & C_FLAGS) == C_FLAG_FREE)  && ((_s & ~C_FLAGS) % CHUNK_ALIGNMENT == 0) && ((_s & ~C_FLAGS) >= C_SIZE_MIN)) ; _s; })
+#define C_SIZE_USED(s)     ({ const chunk_size_enc_t _s = _FORCE_TYPE(chunk_size_enc_t, s); assert(((_s & C_FLAGS) == C_FLAG_USED)  && ((_s & ~C_FLAGS) % CHUNK_ALIGNMENT == 0) && ((_s & ~C_FLAGS) >= C_SIZE_MIN)) ; _s; })
 
-#define C_USED(c)  ({ typeof(c) __c = (c); assert (C_SIZE_USED(__c->size)) ; assert_in_chunks(__c, c_size_decode_used(__c->size)) ; C_SIZE(c_size_decode_used(__c->size)) ; assert_c_sizes(__c) ; assert(C_SIZE_USED(__c->size)) ; __c; })
-#define C_FREE(c)  ({ typeof(c) __c = (c); assert (C_SIZE_FREE(__c->size)) ; assert_in_chunks(__c, c_size_decode_free(__c->size)) ; C_SIZE(c_size_decode_free(__c->size)) ; assert_c_sizes(__c) ; assert(C_SIZE_FREE(__c->size)) ; assert_c_ptr(__c); assert_c_next(__c); ; __c; })
+//_FORCE_TYPE(chunk_s*, c)
+#define C_CHUNK(c) ({ const chunk_s* const _c = (c); assert(c_size_is_free(_c->size) ? C_FREE(_c) : C_USED(_c)); _c; })
+// _FORCE_TYPE(chunk_s*, c)
+#define C_USED(c)  ({ typeof(c) _c = (c); assert(in_chunks(_c, C_SIZE_MIN) && C_SIZE_USED(_c->size) && in_chunks(_c, c_size_decode_used(_c->size)) && C_SIZE(c_size_decode_used(_c->size))); assert_c_sizes(_c); _c; })
+#define C_FREE(c)  ({ typeof(c) _c = (c); assert(in_chunks(_c, C_SIZE_MIN) && C_SIZE_FREE(_c->size) && in_chunks(_c, c_size_decode_free(_c->size)) && C_SIZE(c_size_decode_free(_c->size))); assert_c_sizes(_c); assert_c_ptr(_c); assert_c_next(_c); _c; })
 
-#define c_size2(c, s) (*(chunk_size_t*)((void*)(c) + C_SIZE(s) - sizeof(chunk_size_t)))
+#define c_size2(c, s) (*(chunk_size_enc_t*)((void*)(c) + C_SIZE(s) - sizeof(chunk_size_enc_t)))
 
-#define c_size_decode_is_free(s) (C_SIZE_ENCODED(s) & C_FLAG_FREE)
+#define c_size_is_free(s) ((int)((C_SIZE_ENCODED(s) & C_FLAGS) == C_FLAG_FREE))
+#define c_size_is_used(s) ((int)((C_SIZE_ENCODED(s) & C_FLAGS) == C_FLAG_USED))
+
+#define c_size_encode_free(s) ((chunk_size_enc_t)(C_SIZE(s) | C_FLAG_FREE))
+#define c_size_encode_used(s) ((chunk_size_enc_t)(C_SIZE(s) | C_FLAG_USED))
 
 // NAO SEI QUAL É, NAO PODE USAR assert DE FLAG
-static inline u64 c_size_decode (const chunk_size_t s) {
-    assert ( (s & ~1ULL) >= C_SIZE_MIN || (s & ~1ULL) == BUFF_LR_VALUE ); //  BUFF_LR_VALUE sem a flag de used
-    assert ( (s & ~1ULL) % 8 == 0 || (s & ~1ULL) == BUFF_LR_VALUE );
-    return C_SIZE_ENCODED(s) & ~C_FLAGS;
-}
+// -> CUIDADO COM O LR
+#define c_size_decode(s)      ((chunk_size_t)(C_SIZE_ENCODED(s) & ~C_FLAGS))
+#define c_size_decode_free(s) ((chunk_size_t)((C_SIZE_FREE(s)) & ~C_FLAG_FREE))
+#define c_size_decode_used(s) ((chunk_size_t)((C_SIZE_USED(s)) & ~C_FLAG_USED))
 
-#define c_size_decode_free(_s) ({ const chunk_size_t s = (_s); (( C_SIZE_ENCODED(s)) & C_FLAG_FREE) * (s ^ C_FLAG_FREE); })
-#define c_size_decode_used(_s) ({ const chunk_size_t s = (_s); ((~C_SIZE_ENCODED(s)) & C_FLAG_FREE) * (s              ); })
+#define c_left_size(c) (*(chunk_size_enc_t*)((void*)(c) - sizeof(chunk_size_enc_t)))
 
-#define c_size_encode_free(s) (C_SIZE(s) | C_FLAG_FREE)
-#define c_size_encode_used(s) (C_SIZE(s) | C_FLAG_USED)
-
-#define c_left_size(c) (*(chunk_size_t*)((void*)(c) - sizeof(chunk_size_t)))
-
-#define c_left(_c) ({ const chunk_s* const c = (_c); (chunk_s*)((void*)c - c_size_decode(*(chunk_size_t*)((void*)c - sizeof(chunk_size_t)))); })
+#define c_left(c) ((chunk_s*)({ const chunk_s* const _c = (c); (void*)_c - c_size_decode(*(chunk_size_enc_t*)((void*)_c - sizeof(chunk_size_enc_t))); }))
 #define c_right(c, s) ((chunk_s*)((void*)(c) + C_SIZE(s)))
 
-#define assert_in_buff(a, s) assert(in_mem((a), (s), buff, buffSize))
-#define assert_in_chunks(a, s) assert(in_mem((a), (s), BUFF_CHUNKS, BUFF_CHUNKS_SIZE))
+#define in_buff(a, s)   in_mem((a), (s), buff, buffSize)
+#define in_chunks(a, s) in_mem((a), (s), BUFF_CHUNKS, BUFF_CHUNKS_SIZE)
 
 // OS DOIS DEVEM SER LIDADOS DE FORMA SÍNCRONA
-#define assert_c_sizes(_c) ({ const chunk_s* const c = (_c) ; assert(c_size_decode_is_free(c->size) == !!c_size_decode_is_free(c->size)) ; assert(C_SIZE_MIN <= c_size_decode(c->size)) ; assert(c->size == c_size2(c, c_size_decode(c->size))); })
-#define assert_c_ptr(_c)  ({ const chunk_s* const c = (_c) ; assert_in_buff(c->ptr, sizeof(*c->ptr)) ; assert(c->ptr) ; assert(*c->ptr == c); })
-#define assert_c_next(_c) ({ const chunk_s* const c = (_c) ; if (c->next) { assert_aligned(c->next, 8); assert_in_chunks(c->next, c->next->size); assert(&c->next == c->next->ptr); } })
+#define assert_c_sizes(c) ({ const chunk_s* const _c = (c) ; assert(c_size_is_free(_c->size) == !!c_size_is_free(_c->size)) ; assert(C_SIZE_MIN <= c_size_decode(_c->size)) ; assert(_c->size == c_size2(_c, c_size_decode(_c->size))); })
+#define assert_c_ptr(c)   ({ const chunk_s* const _c = (c) ; assert(in_buff(_c->ptr, sizeof(*_c->ptr))) ; assert(_c->ptr) ; assert(*_c->ptr == _c); })
+#define assert_c_next(c)  ({ const chunk_s* const _c = (c) ; if (_c->next) { assert_aligned(_c->next, 8); assert_in_chunks(_c->next, _c->next->size); assert(&_c->next == _c->next->ptr); } })
 #define assert_c_data(c, d) assert ( c_data(c) == (d) )
 
-static inline void assert_c (const chunk_s* const c) {
-    if (c_size_decode_is_free(c->size))
-        C_FREE(c);
-    else
-        C_USED(c);
-}
-
-static inline void c_clear (chunk_s* const c, const u64 s) {
 #if 0
-    memset(c, 0, C_SIZE(s));
+#define c_clear(c, s) ((void)memset(c, 0, C_SIZE(s)))
+#else
+#define c_clear(c, s) ()
 #endif
-}
 
     //assert_aligned ( c_data(c) , DATA_ALIGNMENT );
 
@@ -217,20 +217,21 @@ static inline void c_clear (chunk_s* const c, const u64 s) {
 //assert(C_FREE(used)->next == NULL || C_FREE((C_FREE(used)->next))->ptr == &C_FREE(used)->next);
 //assert ( C_SIZE_MIN <= f_get_size(used) && f_get_size(used) <= C_SIZE_MAX && (f_get_size(used) % 8) == 0 );
 
-#define c_data(c) ((void*)(c) + sizeof(chunk_size_t))
+#define c_data(_c) ((void*)(_c) + sizeof(chunk_size_enc_t))
 
-#define c_from_data(d) ((chunk_s*)((void*)(d) - sizeof(chunk_size_t)))
+//_FORCE_TYPE(data_p, _d)
+#define c_from_data(_d) ((chunk_s*)((void*)(_d) - sizeof(chunk_size_enc_t)))
 
 // DATA SIZE FROM THE CHUNK SIZE
-#define c_data_size(s) (C_SIZE(s) - sizeof(chunk_s) - sizeof(chunk_size_t))
+#define c_data_size(_s) ((data_size_t)(C_SIZE(_s) - sizeof(chunk_s) - sizeof(chunk_size_enc_t)))
 
-#define c_set_sizes(_c, _s, _se) ({ chunk_s* const c = (_c); const u64 s = (_s); const chunk_size_t se = (_se); *(chunk_size_t*)((void*)(c) + C_SIZE(s) - sizeof(chunk_size_t)) = c->size = se;  })
+#define c_set_sizes(_c, _s, _se) ({ chunk_s* const c = (_c); const u64 x = _FORCE_TYPE(u64,_s); const chunk_size_enc_t se = _FORCE_TYPE(chunk_size_enc_t, _se); *(chunk_size_enc_t*)((void*)(c) + C_SIZE(x) - sizeof(chunk_size_enc_t)) = c->size = se;  })
 
-#define c_set_sizes_free(c, s) c_set_sizes(c, s, c_size_encode_free(s))
-#define c_set_sizes_used(c, s) c_set_sizes(c, s, c_size_encode_used(s))
+#define c_set_sizes_free(_c, _s) c_set_sizes(_c, _s, c_size_encode_free(_s))
+#define c_set_sizes_used(_c, _s) c_set_sizes(_c, _s, c_size_encode_used(_s))
 
 // TODO: FIXME: outra verificação, completa
-// assert_c(c) o chunk é válido, levando em consideração qual tipo é
+// C_CHUNK(c) o chunk é válido, levando em consideração qual tipo é
 
 // ESCOLHE O PRIMEIRO PTR
 // BASEADO NESTE SIZE, SELECINAR UM PTR
@@ -246,7 +247,7 @@ static inline void c_clear (chunk_s* const c, const u64 s) {
 
 // QUEREMOS COLOCAR UM FREE
 // SOMENTE A LIB USA ISSO, ENTAO NAO PRECISA DE TANTAS CHEGAGENS?
-static inline chunk_s** root_put_ptr (u64 size) {
+static inline chunk_s** root_put_ptr (chunk_size_t size) {
 
     C_SIZE(size);
 
@@ -357,17 +358,13 @@ static inline chunk_s** root_get_ptr (u64 size) {
     return BUFF_ROOTS + idx;
 }
 
-static inline chunk_s* c_free_fill_and_register (chunk_s* const c, const u64 size) {
+static inline chunk_s* c_free_fill_and_register (chunk_s* const c, const u64 s) {
 
-    dbg("FILLING AND REGISTERING CHUNK BX%llX WITH SIZE %llu", D(c), D(size));
+    c_set_sizes_free(c, C_SIZE(s));
 
-    c_set_sizes_free(c, C_SIZE(size));
-
-    if ((c->next = *(c->ptr = root_put_ptr(size))))
+    if ((c->next = *(c->ptr = root_put_ptr(s))))
         c->next->ptr = &c->next;
     *c->ptr = c;
-
-    dbg("REGISTERED CHUNK BX%llX SIZE %llu PTR BX%llX NEXT BX%llX FREE %llu", BOFFSET(c), (uintll)size, BOFFSET(c->ptr), BOFFSET(c->next), (uintll)c_size_decode_is_free(c->size));
 
     return C_FREE(c);
 }
@@ -390,15 +387,15 @@ static void dedipy_verify (void) {
     assert_in_buff(BUFF_ROOTS, BUFF_ROOTS_SIZE);
 
     // CHUNKS
-    assert_in_buff   (BUFF_CHUNKS, c_size_decode_free(BUFF_CHUNKS->size));
-    assert_in_chunks (BUFF_CHUNKS, c_size_decode_free(BUFF_CHUNKS->size));
+    assert(in_buff   (BUFF_CHUNKS, c_size_decode_free(BUFF_CHUNKS->size)));
+    assert(in_chunks (BUFF_CHUNKS, c_size_decode_free(BUFF_CHUNKS->size)));
 
     // LEFT/RIGHT
     assert(*BUFF_L == BUFF_LR_VALUE);
     assert(*BUFF_R == BUFF_LR_VALUE);
 
-    assert_in_buff(BUFF_L, sizeof(chunk_size_t));
-    assert_in_buff(BUFF_R, sizeof(chunk_size_t));
+    assert_in_buff(BUFF_L, sizeof(chunk_size_enc_t));
+    assert_in_buff(BUFF_R, sizeof(chunk_size_enc_t));
 
     assert((buff + buffSize) == BUFF_LMT);
 
@@ -412,23 +409,21 @@ static void dedipy_verify (void) {
     assert(BUFF_ROOTS[ROOTS_N]);
 
 #if DEDIPY_VERIFY || 1
-    u64 totalFree = 0;
-    u64 totalUsed = 0;
+    chunk_size_t totalFree = 0;
+    chunk_size_t totalUsed = 0;
 
     { const chunk_s* c = BUFF_CHUNKS;
 
-        while (c != (chunk_s*)BUFF_R) { assert_c (c);
-            if (c_size_decode_free(c->size)) {
-                C_FREE(c);
-                totalFree += c_size_decode_free(c->size);
-            } else {
-                C_USED(c);
-                totalUsed += c_size_decode_used(c->size);
-            } c = c_right(c, c_size_decode(c->size));
+        while (c != (chunk_s*)BUFF_R) {
+            if (c_size_is_free(C_CHUNK(c)->size))
+                totalFree += c_size_decode_free(C_FREE(c)->size);
+            else
+                totalUsed += c_size_decode_used(C_USED(c)->size);
+            c = c_right(c, c_size_decode(c->size));
         }
     }
 
-    const u64 total = totalFree + totalUsed;
+    const chunk_size_t total = totalFree + totalUsed;
 
     dbg3("-- TOTAL %llu ------", (uintll)total);
 
@@ -438,8 +433,8 @@ static void dedipy_verify (void) {
     uint idx = 0; chunk_s** ptrRoot = BUFF_ROOTS;
 
     do {
-        const u64 fst = rootSizes[idx]; // TAMANHOS DESTE EM DIANTE DEVEM FICAR NESTE ROOT
-        const u64 lmt = rootSizes[idx + 1]; // TAMANHOS DESTE EM DIANTE DEVEM FICAR SÓ NOS ROOTS DA FRENTE
+        const chunk_size_t fst = rootSizes[idx]; // TAMANHOS DESTE EM DIANTE DEVEM FICAR NESTE ROOT
+        const chunk_size_t lmt = rootSizes[idx + 1]; // TAMANHOS DESTE EM DIANTE DEVEM FICAR SÓ NOS ROOTS DA FRENTE
 
         assert (fst < lmt);
         assert (fst >= C_SIZE_MIN);
@@ -449,19 +444,16 @@ static void dedipy_verify (void) {
 
         dbg3("FREE ROOT #%d CHUNK BX%llX", idx, BOFFSET(chunk));
 
-        while (chunk) { const u64 size = c_size_decode_free(chunk->size);
-            assert_in_chunks ( chunk, size );
-            C_SIZE ( size );
+        while (chunk) { const chunk_size_t size = c_size_decode_free(C_FREE(chunk)->size);
             assert ( size >= fst );
             assert ( size <  lmt );
             assert ( chunk->ptr == ptr );
-            assert_c ( chunk );
             //assert ( f_ptr_root_get(f_get_size(chunk)) == ptrRoot );
             //assert ( root_put_ptr(f_get_size(chunk)) == ptrRoot ); QUAL DOS DOIS? :S e um <=/>= em umdeles
             //
-            totalFree -= size;
+            totalFree -= C_SIZE(size);
             // PRÓXIMO
-            chunk = *(ptr = &chunk->next);
+            chunk = *(ptr = &C_FREE(chunk->next));
         }
 
         ptrRoot++;
@@ -559,214 +551,6 @@ void dedipy_free (void* const data) {
     }
 }
 
-void dedipy_main (void) {
-
-    // SUPPORT CALLING FROM MULTIPLE PLACES =]
-    static int initialized = 0;
-
-    if (initialized)
-        return;
-
-    assert ( is_from_to(0, 0, 2) );
-    assert ( is_from_to(0, 1, 2) );
-    assert ( is_from_to(0, 2, 2) );
-    assert ( is_from_to(0, 0, 0) );
-    assert ( is_from_to(1, 1, 1) );
-
-    initialized = 1;
-
-    uintll buffFD_    = 0;
-    uintll buffFlags_ = 0;
-    uintll buffAddr_  = 0;
-    uintll buffTotal_ = 0;
-    uintll buffStart_ = 0;
-    uintll buffSize_  = 0;
-    uintll cpu_       = 0;
-    uintll pid_       = 0;
-    uintll code_      = 0;
-    uintll started_   = 0;
-    uintll id_        = 0;
-    uintll n_         = 0;
-    uintll groupID_   = 0;
-    uintll groupN_    = 0;
-
-    const char* var = getenv("DEDIPY");
-
-    //fatal("FAILED TO LOAD ENVIROMENT PARAMS");
-    if (var) {
-        if (sscanf(var, "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX"  "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX",
-            &cpu_, &pid_, &buffFD_, &buffFlags_, &buffAddr_, &buffTotal_, &buffStart_, &buffSize_, &code_, &started_, &id_, &n_, &groupID_, &groupN_) != 14)
-            fatal("FAILED TO LOAD ENVIROMENT PARAMS");
-    } else { // EMERGENCY MODE =]
-        dbg("RUNNING IN FALL BACK MODE");
-        cpu_ = sched_getcpu();
-        buffFD_ = 0;
-        buffFlags_ = MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_FIXED_NOREPLACE;
-        buffAddr_ = (uintll)BUFF_ADDR;
-        buffTotal_ = 256*1024*1024;
-        buffStart_ = 0;
-        buffSize_ = buffTotal_;
-        pid_ = getpid();
-        n_ = 1;
-        groupN_ = 1;
-    }
-
-    // THOSE ARE FOR EMERGENCY/DEBUGGING
-    // THEY ARE IN DECIMAL, FOR MANUAL SETTING IN THE C SOURCE/SHELL
-    if ((var = getenv("DEDIPY_BUFF_ADDR"  ))) buffAddr_    = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_BUFF_FD"    ))) buffFD_      = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_BUFF_FLAGS" ))) buffFlags_   = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_BUFF_TOTAL" ))) buffTotal_   = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_BUFF_START" ))) buffStart_   = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_BUFF_SIZE"  ))) buffSize_    = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_CPU"        ))) cpu_         = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_ID"         ))) id_          = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_N"          ))) n_           = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_GROUP_ID"   ))) groupID_     = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_GROUP_N"    ))) groupN_      = strtoull(var, NULL, 10);
-    if ((var = getenv("DEDIPY_PID"        ))) pid_         = strtoull(var, NULL, 10);
-
-    if ((void*)buffAddr_ != BUFF_ADDR)
-        fatal("BUFFER ADDRESS MISMATCH");
-
-    if ((pid_t)pid_ != getpid())
-        fatal("PID MISMATCH");
-
-    if (buffStart_ >= buffTotal_)
-        fatal("BAD BUFFER START");
-
-    if (buffSize_ == 0)
-        fatal("BAD BUFFER SIZE");
-
-    if ((int)cpu_ != sched_getcpu())
-        fatal("CPU MISMATCH");
-
-    if (n_ == 0 || n_ > 0xFF)
-        fatal("BAD N");
-
-    if (id_ >= n_)
-        fatal("BAD ID/N");
-
-    if (groupN_ == 0 || groupN_ > 0xFF)
-        fatal("BAD GROUP N");
-
-    if (groupID_ >= groupN_)
-        fatal("BAD GROUP ID/N");
-
-    //  | MAP_LOCKED | MAP_POPULATE | MAP_HUGETLB | MAP_HUGE_1GB
-    if (BUFF_ADDR != mmap(BUFF_ADDR, buffTotal_, PROT_READ | PROT_WRITE, buffFlags_, (int)buffFD_, 0))
-        fatal("FAILED TO MAP BUFFER");
-
-    if (buffFD_ && close(buffFD_))
-        fatal("FAILED TO CLOSE BUFFER FD");
-
-    dbg("INICIALIZANDO AINDA...");
-
-    // INFO
-    buffFD    = (int)buffFD_;
-    buff      = BUFF_ADDR + buffStart_;
-    buffSize  = buffSize_;
-    buffTotal = buffTotal_;
-    id        = id_;
-    n         = n_;
-    groupID   = groupID_;
-    groupN    = groupN_;
-    cpu       = cpu_;
-    code      = code_;
-    pid       = pid_;
-    started   = started_;
-
-    //
-    memset(buff, 0, buffSize);
-
-    // var + 14*16, strlen(var + 14*16)
-    char name[256];
-
-    if (snprintf(name, sizeof(name), PROGNAME "#%u", id) < 2 || prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0))
-        fatal("FAILED TO SET PROCESS NAME");
-
-    // LEFT AND RIGHT
-    *BUFF_L = BUFF_LR_VALUE;
-    *BUFF_R = BUFF_LR_VALUE;
-
-    dbg("CRIANDO CHUNK 0 %llu", (uintll)BUFF_CHUNKS_SIZE);
-
-    // THE INITIAL CHUNK
-    // É O MAIOR CHUNK QUE PODERÁ SER CRIADO; ENTÃO AQUI CONFIRMA QUE O C_SIZE_MAX E ROOTS_SIZES_N SÃO MAIORES DO QUE ELE
-    c_free_fill_and_register(BUFF_CHUNKS, BUFF_CHUNKS_SIZE);
-
-    dbg("CHUNK 0 CRIADO");
-
-    // TODO: FIXME: tentar dar dedipy_malloc() e dedipy_realloc() com valores bem grandes, acima desses limies, e confirmar que deu NULL
-    // ROOTS_SIZES_N
-
-    assert (C_SIZE_MIN == ROOTS_SIZES_0);
-
-    assert (ROOTS_SIZES_0 < ROOTS_SIZES_N);
-
-    assert ( root_get_ptr(C_SIZE_MIN) == BUFF_ROOTS );
-    assert ( root_put_ptr(C_SIZE_MIN) == BUFF_ROOTS );
-
-    assert ( root_get_ptr(16ULL*1024*1024*1024*1024) == (BUFF_ROOTS + (ROOTS_N - 1)) );
-    assert ( root_put_ptr(16ULL*1024*1024*1024*1024) <= (BUFF_ROOTS + (ROOTS_N - 1)) ); // COMO VAI ARREDONDAR PARA BAIXO, PEDIR O MÁXIMO PODE CAIR LOGO ANTES DO ÚLTIMO SLOT
-
-    assert ( c_size_decode_used(c_size_encode_used(65536)) == 65536 );
-    assert ( c_size_decode_free(c_size_encode_free(65536)) == 65536 );
-
-    assert ( c_size_decode_used(c_size_encode_used(C_SIZE_MIN)) == C_SIZE_MIN );
-    assert ( c_size_decode_free(c_size_encode_free(C_SIZE_MIN)) == C_SIZE_MIN );
-
-    dbg("CPU %u",                  (uint)cpu);
-    dbg("PID %llu",                (uintll)pid);
-    dbg("ID %u",                   (uint)id);
-    dbg("CODE %llu",               (uintll)code);
-
-    dbg("ROOTS_N %llu", (uintll)ROOTS_N);
-    dbg("ROOTS_SIZES_0 %llu", (uintll)ROOTS_SIZES_0);
-    dbg("ROOTS_SIZES_N %llu", (uintll)ROOTS_SIZES_N);
-
-    dbg("C_SIZE_MIN %llu", (uintll)C_SIZE_MIN);
-
-    dbg("BUFF ADDR 0x%016llX",      (uintll)BUFF_ADDR);
-    dbg("BUFF TOTAL SIZE %llu",     (uintll)buffTotal);
-    dbg("BUFF START %llu",          (uintll)buffStart_);
-    dbg("BUFF 0x%016llX",           BOFFSET(buff));
-    dbg("BUFF_ROOTS BX%llX",        BOFFSET(BUFF_ROOTS));
-    dbg("BUFF_L BX%llX",            BOFFSET(BUFF_L));
-    dbg(" BUFF_CHUNKS BX%llX",      BOFFSET(BUFF_CHUNKS));
-    //dbg(" BUFF_CHUNKS SIZE %llu",   (uintll)(c_size_decode_free(BUFF_CHUNKS->size)));
-    dbg(" BUFF_CHUNKS PTR BX%llX",  BOFFSET( BUFF_CHUNKS->ptr));
-    dbg("*BUFF_CHUNKS PTR BX%llX",  BOFFSET(*BUFF_CHUNKS->ptr));
-    dbg(" BUFF_CHUNKS NEXT BX%llX", BOFFSET( BUFF_CHUNKS->next));
-    dbg("BUFF_R BX%llX",            BOFFSET(BUFF_R));
-    dbg("BUFF_LMT BX%llX",          BOFFSET(BUFF_LMT));
-    dbg("BUFF SIZE %llu",          (uintll)buffSize);
-
-    dbg("*BUFF_L %llu",    (uintll)*BUFF_L);
-    dbg("*BUFF_R %llu",    (uintll)*BUFF_R);
-
-    assert ( sizeof(u64) == sizeof(off_t) );
-    assert ( sizeof(u64) == sizeof(size_t) );
-    assert ( sizeof(u64) == 8 );
-    assert ( sizeof(void*) == 8 );
-
-    void* a = dedipy_malloc(2*1024*1024);
-
-    if (dedipy_malloc(1))
-        (void)0;
-
-    dedipy_free(a);
-
-    dedipy_free(dedipy_malloc(      65536));
-    dedipy_free(dedipy_malloc(2*1024*1024));
-    dedipy_free(dedipy_malloc(3*1024*1024));
-    dedipy_free(dedipy_malloc(4*1024*1024));
-
-    dedipy_verify();
-
-    dbg("OKAY!");
-}
-
 // The  realloc()  function returns a pointer to the newly allocated memory, which is suitably aligned for any built-in type, or NULL if the request failed.
 // The returned pointer may be the same as ptr if the allocation was not moved (e.g., there was room to expand the allocation in-place),
 //    or different from ptr if the allocation was moved to a new address.
@@ -775,15 +559,15 @@ void dedipy_main (void) {
 void* dedipy_realloc (void* const data_, const size_t dataSizeNew_) {
 
     if (data_ == NULL)
-        return dedipy_malloc(dataSizeNew_);
+        return dedipy_malloc((data_size_t)dataSizeNew_);
 
     // CONSIDERA O CHUNK INTEIRO, E O ALINHA
-    u64 sizeNew = c_size_from_data_size(dataSizeNew_);
+    u64 sizeNew = c_size_from_data_size((data_size_t)dataSizeNew_);
 
     // FOI NOS PASSADO O DATA; VAI PARA O CHUNK
-    chunk_s* const chunk = c_from_data(data_);
+    chunk_s* const chunk = C_USED(c_from_data(data_));
 
-    u64 size = c_size_decode_used(C_USED(chunk)->size);
+    u64 size = c_size_decode_used(chunk->size);
 
     if (size >= sizeNew) { // ELE SE AUTOFORNECE
         if ((size - sizeNew) < C_SIZE_MIN)
@@ -1008,6 +792,227 @@ void dedipy_test (void) {
 #endif
 }
 
+void dedipy_main (void) {
+
+    // SUPPORT CALLING FROM MULTIPLE PLACES =]
+    static int initialized = 0;
+
+    if (initialized)
+        return;
+
+    assert ( is_from_to(0, 0, 2) );
+    assert ( is_from_to(0, 1, 2) );
+    assert ( is_from_to(0, 2, 2) );
+    assert ( is_from_to(0, 0, 0) );
+    assert ( is_from_to(1, 1, 1) );
+
+    initialized = 1;
+
+    uintll buffFD_    = 0;
+    uintll buffFlags_ = 0;
+    uintll buffAddr_  = 0;
+    uintll buffTotal_ = 0;
+    uintll buffStart_ = 0;
+    uintll buffSize_  = 0;
+    uintll cpu_       = 0;
+    uintll pid_       = 0;
+    uintll code_      = 0;
+    uintll started_   = 0;
+    uintll id_        = 0;
+    uintll n_         = 0;
+    uintll groupID_   = 0;
+    uintll groupN_    = 0;
+
+    const char* var = getenv("DEDIPY");
+
+    //fatal("FAILED TO LOAD ENVIROMENT PARAMS");
+    if (var) {
+        if (sscanf(var, "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX"  "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX",
+            &cpu_, &pid_, &buffFD_, &buffFlags_, &buffAddr_, &buffTotal_, &buffStart_, &buffSize_, &code_, &started_, &id_, &n_, &groupID_, &groupN_) != 14)
+            fatal("FAILED TO LOAD ENVIROMENT PARAMS");
+    } else { // EMERGENCY MODE =]
+        dbg("RUNNING IN FALL BACK MODE");
+        cpu_ = sched_getcpu();
+        buffFD_ = 0;
+        buffFlags_ = MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_FIXED_NOREPLACE;
+        buffAddr_ = (uintll)BUFF_ADDR;
+        buffTotal_ = 256*1024*1024;
+        buffStart_ = 0;
+        buffSize_ = buffTotal_;
+        pid_ = getpid();
+        n_ = 1;
+        groupN_ = 1;
+    }
+
+    // THOSE ARE FOR EMERGENCY/DEBUGGING
+    // THEY ARE IN DECIMAL, FOR MANUAL SETTING IN THE C SOURCE/SHELL
+    if ((var = getenv("DEDIPY_BUFF_ADDR"  ))) buffAddr_    = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_BUFF_FD"    ))) buffFD_      = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_BUFF_FLAGS" ))) buffFlags_   = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_BUFF_TOTAL" ))) buffTotal_   = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_BUFF_START" ))) buffStart_   = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_BUFF_SIZE"  ))) buffSize_    = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_CPU"        ))) cpu_         = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_ID"         ))) id_          = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_N"          ))) n_           = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_GROUP_ID"   ))) groupID_     = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_GROUP_N"    ))) groupN_      = strtoull(var, NULL, 10);
+    if ((var = getenv("DEDIPY_PID"        ))) pid_         = strtoull(var, NULL, 10);
+
+    if ((void*)buffAddr_ != BUFF_ADDR)
+        fatal("BUFFER ADDRESS MISMATCH");
+
+    if ((pid_t)pid_ != getpid())
+        fatal("PID MISMATCH");
+
+    if (buffStart_ >= buffTotal_)
+        fatal("BAD BUFFER START");
+
+    if (buffSize_ == 0)
+        fatal("BAD BUFFER SIZE");
+
+    if ((int)cpu_ != sched_getcpu())
+        fatal("CPU MISMATCH");
+
+    if (n_ == 0 || n_ > 0xFF)
+        fatal("BAD N");
+
+    if (id_ >= n_)
+        fatal("BAD ID/N");
+
+    if (groupN_ == 0 || groupN_ > 0xFF)
+        fatal("BAD GROUP N");
+
+    if (groupID_ >= groupN_)
+        fatal("BAD GROUP ID/N");
+
+    //  | MAP_LOCKED | MAP_POPULATE | MAP_HUGETLB | MAP_HUGE_1GB
+    if (BUFF_ADDR != mmap(BUFF_ADDR, buffTotal_, PROT_READ | PROT_WRITE, buffFlags_, (int)buffFD_, 0))
+        fatal("FAILED TO MAP BUFFER");
+
+    if (buffFD_ && close(buffFD_))
+        fatal("FAILED TO CLOSE BUFFER FD");
+
+    dbg("INICIALIZANDO AINDA...");
+
+    // INFO
+    buffFD    = (int)buffFD_;
+    buff      = BUFF_ADDR + buffStart_;
+    buffSize  = buffSize_;
+    buffTotal = buffTotal_;
+    id        = id_;
+    n         = n_;
+    groupID   = groupID_;
+    groupN    = groupN_;
+    cpu       = cpu_;
+    code      = code_;
+    pid       = pid_;
+    started   = started_;
+
+    //
+    memset(buff, 0, buffSize);
+
+    // var + 14*16, strlen(var + 14*16)
+    char name[256];
+
+    if (snprintf(name, sizeof(name), PROGNAME "#%u", id) < 2 || prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0))
+        fatal("FAILED TO SET PROCESS NAME");
+
+    //
+    assert (C_SIZE_MIN == ROOTS_SIZES_0);
+
+    assert (ROOTS_SIZES_0 < ROOTS_SIZES_N);
+
+    assert( c_size_decode_free(c_size_encode_free((data_size_t)1ULL)) == 1ULL );
+    assert( c_size_decode_free(c_size_encode_free((data_size_t)2ULL)) == 2ULL );
+    assert( c_size_decode_free(c_size_encode_free((data_size_t)3ULL)) == 3ULL );
+    assert( c_size_decode_free(c_size_encode_free((data_size_t)4ULL)) == 4ULL );
+    assert( c_size_decode_free(c_size_encode_free((data_size_t)65536ULL)) == 65536ULL );
+
+    assert( c_size_decode_used(c_size_encode_used((data_size_t)1ULL)) == 1ULL );
+    assert( c_size_decode_used(c_size_encode_used((data_size_t)2ULL)) == 2ULL );
+    assert( c_size_decode_used(c_size_encode_used((data_size_t)3ULL)) == 3ULL );
+    assert( c_size_decode_used(c_size_encode_used((data_size_t)4ULL)) == 4ULL );
+    assert( c_size_decode_used(c_size_encode_used((data_size_t)65536ULL)) == 65536ULL );
+
+    assert ( root_get_ptr(C_SIZE_MIN) == BUFF_ROOTS );
+    assert ( root_put_ptr(C_SIZE_MIN) == BUFF_ROOTS );
+
+    assert ( root_get_ptr(16ULL*1024*1024*1024*1024) == (BUFF_ROOTS + (ROOTS_N - 1)) );
+    assert ( root_put_ptr(16ULL*1024*1024*1024*1024) <= (BUFF_ROOTS + (ROOTS_N - 1)) ); // COMO VAI ARREDONDAR PARA BAIXO, PEDIR O MÁXIMO PODE CAIR LOGO ANTES DO ÚLTIMO SLOT
+
+    assert ( c_size_decode_used(c_size_encode_used((data_size_t)65536)) == (data_size_t)65536 );
+    assert ( c_size_decode_free(c_size_encode_free((data_size_t)65536)) == (data_size_t)65536 );
+
+    assert ( c_size_decode_used(c_size_encode_used((data_size_t)C_SIZE_MIN)) == (data_size_t)C_SIZE_MIN );
+    assert ( c_size_decode_free(c_size_encode_free((data_size_t)C_SIZE_MIN)) == (data_size_t)C_SIZE_MIN );
+
+    // LEFT AND RIGHT
+    *BUFF_L = BUFF_LR_VALUE;
+    *BUFF_R = BUFF_LR_VALUE;
+
+    dbg("CRIANDO CHUNK 0 %llu", (uintll)BUFF_CHUNKS_SIZE);
+
+    // THE INITIAL CHUNK
+    // É O MAIOR CHUNK QUE PODERÁ SER CRIADO; ENTÃO AQUI CONFIRMA QUE O C_SIZE_MAX E ROOTS_SIZES_N SÃO MAIORES DO QUE ELE
+    c_free_fill_and_register(BUFF_CHUNKS, BUFF_CHUNKS_SIZE);
+
+    dbg("CHUNK 0 CRIADO");
+
+    // TODO: FIXME: tentar dar dedipy_malloc() e dedipy_realloc() com valores bem grandes, acima desses limies, e confirmar que deu NULL
+    // ROOTS_SIZES_N
+
+    dbg("CPU %u",                  (uint)cpu);
+    dbg("PID %llu",                (uintll)pid);
+    dbg("ID %u",                   (uint)id);
+    dbg("CODE %llu",               (uintll)code);
+
+    dbg("ROOTS_N %llu", (uintll)ROOTS_N);
+    dbg("ROOTS_SIZES_0 %llu", (uintll)ROOTS_SIZES_0);
+    dbg("ROOTS_SIZES_N %llu", (uintll)ROOTS_SIZES_N);
+
+    dbg("C_SIZE_MIN %llu", (uintll)C_SIZE_MIN);
+
+    dbg("BUFF ADDR 0x%016llX",      (uintll)BUFF_ADDR);
+    dbg("BUFF TOTAL SIZE %llu",     (uintll)buffTotal);
+    dbg("BUFF START %llu",          (uintll)buffStart_);
+    dbg("BUFF 0x%016llX",           BOFFSET(buff));
+    dbg("BUFF_ROOTS BX%llX",        BOFFSET(BUFF_ROOTS));
+    dbg("BUFF_L BX%llX",            BOFFSET(BUFF_L));
+    dbg(" BUFF_CHUNKS BX%llX",      BOFFSET(BUFF_CHUNKS));
+    //dbg(" BUFF_CHUNKS SIZE %llu",   (uintll)(c_size_decode_free(BUFF_CHUNKS->size)));
+    dbg(" BUFF_CHUNKS PTR BX%llX",  BOFFSET( BUFF_CHUNKS->ptr));
+    dbg("*BUFF_CHUNKS PTR BX%llX",  BOFFSET(*BUFF_CHUNKS->ptr));
+    dbg(" BUFF_CHUNKS NEXT BX%llX", BOFFSET( BUFF_CHUNKS->next));
+    dbg("BUFF_R BX%llX",            BOFFSET(BUFF_R));
+    dbg("BUFF_LMT BX%llX",          BOFFSET(BUFF_LMT));
+    dbg("BUFF SIZE %llu",          (uintll)buffSize);
+
+    dbg("*BUFF_L %llu",    (uintll)*BUFF_L);
+    dbg("*BUFF_R %llu",    (uintll)*BUFF_R);
+
+    assert ( sizeof(u64) == sizeof(off_t) );
+    assert ( sizeof(u64) == sizeof(size_t) );
+    assert ( sizeof(u64) == 8 );
+    assert ( sizeof(void*) == 8 );
+
+    void* a = dedipy_malloc(2*1024*1024);
+
+    if (dedipy_malloc(1))
+        (void)0;
+
+    dedipy_free(a);
+
+    dedipy_free(dedipy_malloc(      65536));
+    dedipy_free(dedipy_malloc(2*1024*1024));
+    dedipy_free(dedipy_malloc(3*1024*1024));
+    dedipy_free(dedipy_malloc(4*1024*1024));
+
+    dedipy_verify();
+
+    dbg("OKAY!");
+}
+
 //int posix_memalign(void **memptr, size_t alignment, size_t size) {
 //void *aligned_alloc(size_t alignment, size_t size) {
 //void *valloc(size_t size) {
@@ -1036,3 +1041,7 @@ void dedipy_test (void) {
 
 
 // COLOCAR o BUFF_LR_VALUE
+
+
+
+USOS DO c_size_Xcode_X()
