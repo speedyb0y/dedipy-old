@@ -245,16 +245,13 @@ static int buffFD;
 // SOMENTE A LIB USA ISSO, ENTAO NAO PRECISA DE TANTAS CHEGAGENS?
 static inline chunk_s** root_put_ptr (chunk_size_t size) {
 
-    C_SIZE(size);
-
     uint e = ROOT_EXP;
     uint X = ROOT_X;
     uint x = 0;
 
     uint idx = 0;
 
-    size -= ROOT_BASE;
-    size /= ROOT_MULT;
+    size = (C_SIZE(size) - ROOT_BASE) / ROOT_MULT;
 
     // (1 << e) --> (2^e)
     // CONTINUA ANDANDO ENQUANTO PROVIDENCIARMOS TANTO
@@ -317,8 +314,8 @@ static inline uint root_get_ptr_index (chunk_size_t size) {
 
     uint idx = 0;
 
-    size -= ROOT_BASE; // TODO: FIXME: ter certeza de que isso aqui vai tornar o size impossivel de causar loop infinito ali
-    size /= ROOT_MULT;
+    // TODO: FIXME: ter certeza de que isso aqui vai tornar o size impossivel de causar loop infinito ali
+    size = (C_SIZE(size) - ROOT_BASE) / ROOT_MULT;
 
     // CONTINUA ANDANDO ENQUANTO O PROMETIDO NÃO SATISFAZER O PEDIDO
     while (((1ULL << e) + ((1ULL << e) * x)/X) < size) {
@@ -339,9 +336,7 @@ static inline uint root_get_ptr_index (chunk_size_t size) {
 
 static inline chunk_s** root_get_ptr (chunk_size_t size) {
 
-    C_SIZE(size);
-
-    uint idx = root_get_ptr_index(size);
+    uint idx = root_get_ptr_index(C_SIZE(size));
 
     dbg("SIZE %llu -> ROOTS_SIZES[%u] = %llu", (uintll)size, idx, (uintll)rootSizes[idx]);
 
