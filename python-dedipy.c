@@ -264,20 +264,17 @@ static inline chunk_s** root_put_ptr (chunk_size_t size) {
     // CONTINUA ANDANDO ENQUANTO PROVIDENCIARMOS TANTO
     // TODO: FIXME: fazer de um jeito que va subtraindo, ao inves de recomputar esse expoente toda hora
     while ((((1ULL << e) + ((1ULL << e) * x)/X)) <= size) {
-        u64 foi = (x = (x + 1) % X) == 0;
-        e += foi;
-        foi *= X;
-        X += foi/ROOT_X_ACCEL;
-        X += foi/ROOT_X_ACCEL2;
-        X += foi/ROOT_X_ACCEL3;
+        u64 f = (x = (x + 1) % X) == 0;
+        e += f;
+        f *= X;
+        X += f/ROOT_X_ACCEL;
+        X += f/ROOT_X_ACCEL2;
+        X += f/ROOT_X_ACCEL3;
         idx++;
-    }
+    } idx--; // O ATUAL NÃO PROVIDENCIAMOS, ENTÃO RETIRA 1
 
     if (idx > (ROOTS_N - 1))
         idx = (ROOTS_N - 1);
-
-    // O ATUAL NÃO PROVIDENCIAMOS, ENTÃO RETIRA 1
-    //idx--;
 
     dbg("CHOSE INDEX %u", idx);
 
@@ -316,9 +313,7 @@ static inline chunk_s** root_put_ptr (chunk_size_t size) {
     return BUFF_ROOTS + idx;
 }
 
-static inline uint root_get_ptr_index (u64 size) {
-
-    assert ( size >= ROOTS_SIZES_0 );
+static inline uint root_get_ptr_index (chunk_size_t size) {
 
     uint e = ROOT_EXP;
     uint X = ROOT_X;
@@ -331,23 +326,22 @@ static inline uint root_get_ptr_index (u64 size) {
 
     // CONTINUA ANDANDO ENQUANTO O PROMETIDO NÃO SATISFAZER O PEDIDO
     while (((1ULL << e) + ((1ULL << e) * x)/X) < size) {
-        u64 foi = (x = (x + 1) % X) == 0;
-        e += foi;
-        foi *= X;
-        X += foi/ROOT_X_ACCEL;
-        X += foi/ROOT_X_ACCEL2;
-        X += foi/ROOT_X_ACCEL3;
+        u64 f = (x = (x + 1) % X) == 0;
+        e += f;
+        f *= X;
+        X += f/ROOT_X_ACCEL;
+        X += f/ROOT_X_ACCEL2;
+        X += f/ROOT_X_ACCEL3;
         idx++;
     }
 
     if (idx > (ROOTS_N - 1))
         idx = (ROOTS_N - 1);
 
-    // TEM QUE ADICOIONAR 1 AQUI?
     return idx;
 }
 
-static inline chunk_s** root_get_ptr (u64 size) {
+static inline chunk_s** root_get_ptr (chunk_size_t size) {
 
     C_SIZE(size);
 
@@ -674,6 +668,8 @@ static inline u64 TEST_SIZE (u64 x) {
 void dedipy_test (void) {
 
 #if DEDIPY_TEST
+
+    assert ( ROOTS_SIZES_0 <= C_SIZE(c_size_from_data_size((data_size_t)1)) );
 
     assert ( dedipy_malloc(0) == NULL );
     assert ( dedipy_realloc(BUFF_CHUNKS, 0) == NULL );
