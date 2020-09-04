@@ -1025,3 +1025,7 @@ void dedipy_main (void) {
 // COLOCAR o BUFF_LR_VALUE
 
 USOS DO c_size_Xcode_X()
+
+
+
+testar com cada rootSizes[idx] + ( -2, -1, 0, +1, +2 )
