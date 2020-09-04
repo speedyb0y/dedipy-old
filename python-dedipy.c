@@ -243,7 +243,7 @@ static int buffFD;
 
 // QUEREMOS COLOCAR UM FREE
 // SOMENTE A LIB USA ISSO, ENTAO NAO PRECISA DE TANTAS CHEGAGENS?
-static inline chunk_s** root_put_ptr (chunk_size_t size) {
+static inline uint root_put_ptr_idx (chunk_size_t size) {
 
     uint e = ROOT_EXP;
     uint X = ROOT_X;
@@ -264,14 +264,15 @@ static inline chunk_s** root_put_ptr (chunk_size_t size) {
         X += f/ROOT_X_ACCEL2;
         X += f/ROOT_X_ACCEL3;
         idx++;
-    } idx--; // O ATUAL NÃO PROVIDENCIAMOS, ENTÃO RETIRA 1
+    } idx--; // VOLTA PARA O ANTERIOR, QUE FOI O ÚLTIMO VISTO QUE ESTE GARANTE
 
     if (idx > (ROOTS_N - 1))
         idx = (ROOTS_N - 1);
 
-    dbg("CHOSE INDEX %u", idx);
+    return idx;
+}
 
-    dbg("ROOTS SIZES[%u] = %llu", idx, (uintll)rootSizes[idx]);
+static inline chunk_s** root_put_ptr (chunk_size_t size) {
 
 #if 0
     // vainos masks
@@ -337,8 +338,6 @@ static inline uint root_get_ptr_index (chunk_size_t size) {
 static inline chunk_s** root_get_ptr (chunk_size_t size) {
 
     uint idx = root_get_ptr_index(C_SIZE(size));
-
-    dbg("SIZE %llu -> ROOTS_SIZES[%u] = %llu", (uintll)size, idx, (uintll)rootSizes[idx]);
 
     return BUFF_ROOTS + idx;
 }
