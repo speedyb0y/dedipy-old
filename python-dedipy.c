@@ -8,16 +8,12 @@
   TODO: FIXME: reduzir o PTR e o NEXT para um u32, múltiplo de 16
   TODO: FIXME: interceptar signal(), etc. quem captura eles somos nós. e quando possível, executamos a função deles
   TODO: FIXME: PRECISA DO MSYNC?
-  TODO: FIXME: INTERCEPTAR ABORT()
-  TODO: FIXME: INTERCEPTAR EXIT()
-  TODO: FIXME: INTERCEPTAR _EXIT()
   TODO: FIXME: INTERCEPTAR sched_*()
   TODO: FIXME: INTERCEPTAR exec*()
   TODO: FIXME: INTERCEPTAR system()
   TODO: FIXME: INTERCEPTAR fork()
   TODO: FIXME: INTERCEPTAR clone()
   TODO: FIXME: INTERCEPTAR POSIX ALIGNED MEMORY FUNCTIONS
-
 
     cp -v ${HOME}/dedipy/{util.h,dedipy.h,python-dedipy.h,python-dedipy.c} .
 
@@ -378,7 +374,7 @@ static inline void c_unlink (const chunk_s* const c) {
 static void dedipy_verify (void) {
 
     // ROOTS
-    assert_in_buff(BUFF_ROOTS, BUFF_ROOTS_SIZE);
+    assert(in_buff(BUFF_ROOTS, BUFF_ROOTS_SIZE));
 
     // CHUNKS
     assert(in_buff   (BUFF_CHUNKS, c_size_decode_free(BUFF_CHUNKS->size)));
@@ -665,9 +661,8 @@ static inline u64 TEST_SIZE (u64 x) {
 
 // TODO: FIXME: WE WILL NEED A SIGNAL HANDLER
 
-void dedipy_test (void) {
-
 #if DEDIPY_TEST
+void dedipy_test (void) {
 
     assert ( ROOTS_SIZES_0 <= C_SIZE(c_size_from_data_size((data_size_t)1)) );
 
@@ -785,8 +780,8 @@ void dedipy_test (void) {
 #endif
 
     dbg("TEST DONE");
-#endif
 }
+#endif
 
 void dedipy_main (void) {
 
@@ -992,52 +987,41 @@ void dedipy_main (void) {
     assert ( sizeof(u64) == 8 );
     assert ( sizeof(void*) == 8 );
 
-    void* a = dedipy_malloc(2*1024*1024);
+    void* a = dedipy_malloc((data_size_t)(2*1024*1024));
 
-    if (dedipy_malloc(1))
+    if (dedipy_malloc((data_size_t)(1)))
         (void)0;
 
     dedipy_free(a);
 
-    dedipy_free(dedipy_malloc(      65536));
-    dedipy_free(dedipy_malloc(2*1024*1024));
-    dedipy_free(dedipy_malloc(3*1024*1024));
-    dedipy_free(dedipy_malloc(4*1024*1024));
+    dedipy_free(dedipy_malloc((data_size_t)(      65536)));
+    dedipy_free(dedipy_malloc((data_size_t)(2*1024*1024)));
+    dedipy_free(dedipy_malloc((data_size_t)(3*1024*1024)));
+    dedipy_free(dedipy_malloc((data_size_t)(4*1024*1024)));
 
     dedipy_verify();
 
     dbg("OKAY!");
 }
 
-//int posix_memalign(void **memptr, size_t alignment, size_t size) {
-//void *aligned_alloc(size_t alignment, size_t size) {
-//void *valloc(size_t size) {
-//void *memalign(size_t alignment, size_t size) {
-//void *pvalloc(size_t size) {
+//int posix_memalign(void **memptr, size_t alignment, size_t size)
+//void *aligned_alloc(size_t alignment, size_t size)
+//void *valloc(size_t size)
+//void *memalign(size_t alignment, size_t size)
+//void *pvalloc(size_t size)
 //int brk(void *addr) {
 //void *sbrk(intptr_t increment) ;
-//void sync (void) {
-//int syncfs (int fd) {
-
-
-
-
-
-
+//void sync (void)
+//int syncfs (int fd)
 
 // ver onde dá par diminuir acessos a ponteiros
 //      usar buffLMT em alguns casos? :S
 // Só precisamos do buff, pois ele é o root. as demais coisas sós ao acessadas para inicializar e verificar.
 // O restante é acessado diretamente, pelos ponteiros que o usuário possui.
 
-
-
 // warn_unused_result
 // -Werror=unused-result
 
-
 // COLOCAR o BUFF_LR_VALUE
-
-
 
 USOS DO c_size_Xcode_X()
