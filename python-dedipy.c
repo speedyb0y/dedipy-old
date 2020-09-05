@@ -280,15 +280,15 @@ static inline chunk_s** root_put_ptr (u64 size) {
 
 static inline uint root_get_idx (u64 size) {
 
-    u64 idx = size - C_SIZE_MIN;
+    size -= C_SIZE_MIN;
 
-    if   (idx <= ROOTS_0_MAX) { idx = idx/(ROOTS_0_MAX/4096) + (idx % (ROOTS_0_MAX/4096) != 0); idx += 0*4096; }
-    elif (idx <= ROOTS_1_MAX) { idx = idx/(ROOTS_1_MAX/4096) + (idx % (ROOTS_1_MAX/4096) != 0); idx += 1*4096; }
-    elif (idx <= ROOTS_2_MAX) { idx = idx/(ROOTS_2_MAX/4096) + (idx % (ROOTS_2_MAX/4096) != 0); idx += 2*4096; }
-    elif (idx <= ROOTS_3_MAX) { idx = idx/(ROOTS_3_MAX/4096) + (idx % (ROOTS_3_MAX/4096) != 0); idx += 3*4096; }
-    else                      {                                                                 idx  = 4*4096 - 1; }
-
-    return (uint)idx;
+    return (uint) (
+        (size <= ROOTS_0_MAX) ? size / (ROOTS_0_MAX/4096) + (size % (ROOTS_0_MAX/4096) != 0) + 0*4096 :
+        (size <= ROOTS_1_MAX) ? size / (ROOTS_1_MAX/4096) + (size % (ROOTS_1_MAX/4096) != 0) + 1*4096 :
+        (size <= ROOTS_2_MAX) ? size / (ROOTS_2_MAX/4096) + (size % (ROOTS_2_MAX/4096) != 0) + 2*4096 :
+        (size <= ROOTS_3_MAX) ? size / (ROOTS_3_MAX/4096) + (size % (ROOTS_3_MAX/4096) != 0) + 3*4096 :
+            4*4096 - 1
+        );
 }
 
 static inline chunk_s** root_get_ptr (u64 size) {
