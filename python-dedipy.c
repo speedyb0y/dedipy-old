@@ -283,10 +283,10 @@ static inline uint root_get_idx (u64 size) {
     size -= C_SIZE_MIN;
 
     return (uint) (
-        (size <= ROOTS_0_MAX) ? size / (ROOTS_0_MAX/4096) + (size % (ROOTS_0_MAX/4096) != 0) + 0*4096 :
-        (size <= ROOTS_1_MAX) ? size / (ROOTS_1_MAX/4096) + (size % (ROOTS_1_MAX/4096) != 0) + 1*4096 :
-        (size <= ROOTS_2_MAX) ? size / (ROOTS_2_MAX/4096) + (size % (ROOTS_2_MAX/4096) != 0) + 2*4096 :
-        (size <= ROOTS_3_MAX) ? size / (ROOTS_3_MAX/4096) + (size % (ROOTS_3_MAX/4096) != 0) + 3*4096 :
+        (size <= ROOTS_0_MAX) ? size / (ROOTS_0_MAX >> 12) + (!!(size & 0xFFFULL)) + (0 << 12) :
+        (size <= ROOTS_1_MAX) ? size / (ROOTS_1_MAX >> 12) + (!!(size & 0xFFFULL)) + (1 << 12) :
+        (size <= ROOTS_2_MAX) ? size / (ROOTS_2_MAX >> 12) + (!!(size & 0xFFFULL)) + (2 << 12) :
+        (size <= ROOTS_3_MAX) ? size / (ROOTS_3_MAX >> 12) + (!!(size & 0xFFFULL)) + (3 << 12) :
             4*4096 - 1
         );
 }
