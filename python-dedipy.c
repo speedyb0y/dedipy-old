@@ -153,12 +153,7 @@ static int buffFD;
 #define c_left_size(c) (*(chunk_size_t*)((void*)(c) - sizeof(chunk_size_t)))
 #define c_right(c, s) ((chunk_s*)((void*)(c) + (s)))
 
-#define c_verify_size(s) ( \
-    ((s) & C_FLAGS) == 0ULL && \
-    ((s) & C_SIZE) % CHUNK_ALIGNMENT == 0 && \
-    ((s) & C_SIZE) >= C_SIZE_MIN && \
-    ((s) & C_SIZE) <= C_SIZE_MAX \
-    )
+#define c_verify_size(s) (((s) & C_SIZE) && (!((s) & C_FLAGS)) && (!((s) & C_SIZE) % CHUNK_ALIGNMENT) && C_SIZE_MIN <= ((s) & C_SIZE) && ((s) & C_SIZE) <= C_SIZE_MAX)
 
 // c_size_decode -> CUIDADO COM O LR
 
