@@ -28,8 +28,8 @@
 #define SELF_PUT_FD (FD_MAX - 7)
 
 // WORKERS ESPECÍFICOS
-#define WORKER_GET_FD(workerID) ((FD_MAX - 8) - 2*(workerID))
-#define WORKER_PUT_FD(workerID) ((FD_MAX - 9) - 2*(workerID))
+#define WORKER_GET_FD(workerID) ((int)((FD_MAX - 8) - 2*(workerID)))
+#define WORKER_PUT_FD(workerID) ((int)((FD_MAX - 9) - 2*(workerID)))
 
 //
 #define ANY_GET(data, size) _GET(ANY_GET_FD, data, size)
@@ -50,22 +50,22 @@
 
 static inline uint _GET (const int fd, void* const restrict data, const uint size) {
 
-    uint received;
+    ssize_t received;
 
-    while ((received = read(fd, data, size)) == (uint)-1)
+    while ((received = read(fd, data, size)) == -1)
         if (errno != EINTR)
             abort();
 
     if (!(1 <= received && received <= size))
         abort();
 
-    return received;
+    return (uint)received;
 }
 
 // É MODO PACOTE, ENTAO SE NAO FALHOU É PORQUE ENVIOU TUDO
 static inline void _PUT (const int fd, const void* const restrict data, const uint size) {
 
-    int sent;
+    ssize_t sent;
 
     while ((sent = write(fd, data, size)) == -1)
         if (errno != EINTR)
