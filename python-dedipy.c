@@ -76,17 +76,17 @@
 
 #define ROOTS_N 16384
 
-#define BUFF_ROOTS   ((chunk_s**)    (buff ))
-#define BUFF_L       ((chunk_size_t*)(buff + ROOTS_N*sizeof(chunk_s*) ))
-#define BUFF_CHUNKS  ((chunk_s*     )(buff + ROOTS_N*sizeof(chunk_s*) + sizeof(chunk_size_t)))
-#define BUFF_R       ((chunk_size_t*)(buff + buffSize - sizeof(chunk_size_t) ))
-#define BUFF_LMT                     (buff + buffSize )
+#define BUFF_ROOTS   ((chunk_s**)    ((char*)buff ))
+#define BUFF_L       ((chunk_size_t*)((char*)buff + ROOTS_N*sizeof(chunk_s*) ))
+#define BUFF_CHUNKS  ((chunk_s*     )((char*)buff + ROOTS_N*sizeof(chunk_s*) + sizeof(chunk_size_t)))
+#define BUFF_R       ((chunk_size_t*)(void*)((char*)buff + buffSize - sizeof(chunk_size_t) ))
+#define BUFF_LMT                     ((char*)buff + buffSize )
 
 #define BUFF_ROOTS_SIZE (ROOTS_N*sizeof(chunk_s*))
 #define BUFF_CHUNKS_SIZE (buffSize - BUFF_ROOTS_SIZE - 2*sizeof(chunk_size_t)) // É TODO O BUFFER RETIRANDO O RESTANTE
 
 // FOR DEBUGGING
-#define BOFFSET(x) ((uintll)((void*)(x) - (void*)BUFF_ADDR))
+#define BOFFSET(x) ((uintll)((char*)(x) - (char*)BUFF_ADDR))
 
 typedef u64 chunk_size_t;
 
@@ -150,12 +150,12 @@ static int buffFD;
 // O TAMANHO DO CHUNK TEM QUE CABER ELE QUANDO ESTIVER LIVRE
 #define c_size_from_requested_data_size(ds) (c_size_used_minimal(ds) > C_SIZE_MIN ? c_size_used_minimal(ds) : C_SIZE_MIN)
 
-#define c_size2(c, s) (*(chunk_size_t*)((void*)c + (s) - sizeof(chunk_size_t)))
-#define c_data(c) ((void*)c + sizeof(chunk_size_t))
-#define c_from_data(d) ((chunk_s*)((void*)d - sizeof(chunk_size_t)))
+#define c_size2(c, s) (*(chunk_size_t*)((char*)c + (s) - sizeof(chunk_size_t)))
+#define c_data(c) ((char*)c + sizeof(chunk_size_t))
+#define c_from_data(d) ((chunk_s*)((char*)d - sizeof(chunk_size_t)))
 #define c_data_size(s) ((u64)(s) - 2*sizeof(chunk_size_t)) // DATA SIZE FROM THE USED CHUNK SIZE
-#define c_left_size(c) (*(chunk_size_t*)((void*)c - sizeof(chunk_size_t)))
-#define c_right(c, s) ((chunk_s*)((void*)c + (s)))
+#define c_left_size(c) (*(chunk_size_t*)((char*)c - sizeof(chunk_size_t)))
+#define c_right(c, s) ((chunk_s*)((char*)c + (s)))
 
 #define c_verify_size(s) (((s) & C_SIZE) && (!((s) & C_FLAGS)) && (!((s) & C_SIZE) % CHUNK_ALIGNMENT) && C_SIZE_MIN <= ((s) & C_SIZE) && ((s) & C_SIZE) <= C_SIZE_MAX && (((s) & C_SIZE) == (s)))
 
@@ -165,16 +165,16 @@ static int buffFD;
 // DEPOIS AGORA SIM LE O SIZE PARA VERIFICAR TUDO
 // COISAS REPETITIVAS, MAS É PARA TESTAR AS FUNÇÕES TAMBÉM
 #define c_verify_used(c) ( \
-    /* CHUNK */ is_aligned(c, CHUNK_ALIGNMENT) && in_chunks(c, C_SIZE_MIN) && in_chunks(c, c->size & C_SIZE) && \
+    /* CHUNK */ is_aligned_ptr(c, CHUNK_ALIGNMENT) && in_chunks(c, C_SIZE_MIN) && in_chunks(c, c->size & C_SIZE) && \
     /* SIZES */ (c->size & C_USED) && c_verify_size(c->size & C_SIZE) && c_size2(c, c->size & C_SIZE) == c->size && ((c->size & ~C_FLAGS) == (c->size & C_SIZE)) && \
-    /* DATA */ c_from_data(c_data(c)) == c && is_aligned(c_data(c), DATA_ALIGNMENT) \
+    /* DATA */ c_from_data(c_data(c)) == c && is_aligned_ptr(c_data(c), DATA_ALIGNMENT) \
     )
 
 #define c_verify_free(c) ( \
-    /* CHUNK */ is_aligned(c, CHUNK_ALIGNMENT) && in_chunks(c, C_SIZE_MIN) && in_chunks(c, c->size & C_SIZE) && \
+    /* CHUNK */ is_aligned_ptr(c, CHUNK_ALIGNMENT) && in_chunks(c, C_SIZE_MIN) && in_chunks(c, c->size & C_SIZE) && \
     /* SIZES */ (c->size & C_FREE) && c_verify_size(c->size & C_SIZE) && c_size2(c, c->size & C_SIZE) == c->size && ((c->size & ~C_FLAGS) == (c->size & C_SIZE)) && \
     /* PTR   */ c->ptr && in_buff(c->ptr, sizeof(chunk_s*)) && *c->ptr == c && \
-    /* NEXT  */ ((c->next == NULL) || (is_aligned(c->next, CHUNK_ALIGNMENT) && in_chunks(c->next, C_SIZE_MIN) && in_chunks(c->next, c->next->size) && &c->next == c->next->ptr )) \
+    /* NEXT  */ ((c->next == NULL) || (is_aligned_ptr(c->next, CHUNK_ALIGNMENT) && in_chunks(c->next, C_SIZE_MIN) && in_chunks(c->next, c->next->size) && &c->next == c->next->ptr )) \
     )
 
     //assert_aligned ( c_data(c) , DATA_ALIGNMENT );
@@ -337,7 +337,7 @@ static void dedipy_verify (void) {
     assert(in_buff(BUFF_L, sizeof(chunk_size_t)));
     assert(in_buff(BUFF_R, sizeof(chunk_size_t)));
 
-    assert((buff + buffSize) == BUFF_LMT);
+    assert(((char*)buff + buffSize) == BUFF_LMT);
 
     assert((void*)(BUFF_ROOTS + ROOTS_N) == (void*)BUFF_L);
 
@@ -361,7 +361,7 @@ static void dedipy_verify (void) {
             } else {
                 assert(c_verify_used(c));
                 totalUsed += c->size & C_SIZE;
-            } c = (void*)c + (c->size & C_SIZE);
+            } c = c_right(c, c->size & C_SIZE);
         }
     }
 
@@ -435,7 +435,7 @@ void* dedipy_malloc (const size_t size_) {
     // SE DER, CONSOME SÓ UMA PARTE, NO FINAL DELE
     if (freeSizeNew >= C_SIZE_MIN) {
         c_free_fill_and_register(used, freeSizeNew);
-        used = (void*)used + freeSizeNew;
+        used = c_right(used, freeSizeNew);
         usedSize = size;
     }
 
@@ -476,7 +476,7 @@ void dedipy_free (void* const data) {
         if (ss & C_FREE) {
             ss &= C_SIZE;
             size += ss;
-            c = (void*)c - ss;
+            c = (chunk_s*)((char*)c - ss);
             c_unregister(c);
         }
 
@@ -830,7 +830,7 @@ void dedipy_main (void) {
 
     // INFO
     buffFD    = (int)buffFD_;
-    buff      = BUFF_ADDR + buffStart_;
+    buff      = (char*)BUFF_ADDR + buffStart_;
     buffSize  = (u64)buffSize_;
     buffTotal = (u64)buffTotal_;
     id        = (uint)id_;
