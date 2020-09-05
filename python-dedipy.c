@@ -63,9 +63,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <time.h>
 #include <sys/types.h>
-#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sched.h>
@@ -79,15 +77,13 @@
 #include "python-dedipy-defs.h"
 
 #define BUFF_ROOTS   ((chunk_s**)    (buff ))
-#define BUFF_L       ((chunk_size_t*)(buff + ROOTS_N*sizeof(void*) ))
-#define BUFF_CHUNKS  ((chunk_s*     )(buff + ROOTS_N*sizeof(void*) + sizeof(chunk_size_t)))
+#define BUFF_L       ((chunk_size_t*)(buff + ROOTS_N*sizeof(chunk_s*) ))
+#define BUFF_CHUNKS  ((chunk_s*     )(buff + ROOTS_N*sizeof(chunk_s*) + sizeof(chunk_size_t)))
 #define BUFF_R       ((chunk_size_t*)(buff + buffSize - sizeof(chunk_size_t) ))
 #define BUFF_LMT                     (buff + buffSize )
 
-#define BUFF_ROOTS_SIZE (ROOTS_N*sizeof(void*))
-#define BUFF_L_SIZE sizeof(chunk_size_t)
-#define BUFF_CHUNKS_SIZE (buffSize - BUFF_ROOTS_SIZE - BUFF_L_SIZE - BUFF_R_SIZE) // É TODO O BUFFER RETIRANDO O RESTANTE
-#define BUFF_R_SIZE sizeof(chunk_size_t)
+#define BUFF_ROOTS_SIZE (ROOTS_N*sizeof(chunk_s*))
+#define BUFF_CHUNKS_SIZE (buffSize - BUFF_ROOTS_SIZE - 2*sizeof(chunk_size_t)) // É TODO O BUFFER RETIRANDO O RESTANTE
 
 // FOR DEBUGGING
 #define BOFFSET(x) ((uintll)((void*)(x) - (void*)BUFF_ADDR))
