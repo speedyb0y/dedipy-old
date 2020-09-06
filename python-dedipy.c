@@ -157,23 +157,12 @@ static int buffFD;
 // O TAMANHO DO CHUNK TEM QUE CABER ELE QUANDO ESTIVER LIVRE
 #define c_size_from_requested_data_size(ds) (c_size_used_minimal(ds) > C_SIZE_MIN ? c_size_used_minimal(ds) : C_SIZE_MIN)
 
-static inline chunk_size_t* c_size2 (const chunk_s* const c, const chunk_size_t s)
-    { return (chunk_size_t*)((addr_t)c + s - sizeof(chunk_size_t)); }
-
-static inline void* c_data (const chunk_s* const c)
-    { return (void*)((addr_t)c + sizeof(chunk_size_t)); }
-
-static inline chunk_s* c_from_data (const void* const d)
-    { return (chunk_s*)((addr_t)d - sizeof(chunk_size_t)); }
-
-// DATA SIZE FROM THE USED CHUNK SIZE
-static inline u64 c_data_size (const chunk_size_t s)
-    { return (u64)(s - 2*sizeof(chunk_size_t)); }
-
-#define c_left_size(c) (*(chunk_size_t*)((char*)c - sizeof(chunk_size_t)))
-
-static inline chunk_s* c_right (const chunk_s* const c, const chunk_size_t s)
-    { return ((chunk_s*)((addr_t)c + s)); }
+#define c_size2(c, s) ((chunk_size_t*)(ADDR(c) + (s) - sizeof(chunk_size_t)))
+#define c_data(c) ((void*)(ADDR(c) + sizeof(chunk_size_t)))
+#define c_from_data(d) ((chunk_s*)(ADDR(d) - sizeof(chunk_size_t)))
+#define c_data_size(s) ((u64)((s) - 2*sizeof(chunk_size_t))) // DATA SIZE FROM THE USED CHUNK SIZE
+#define c_left_size(c) (*(chunk_size_t*)(ADDR(c) - sizeof(chunk_size_t)))
+#define c_right(c, s) ((chunk_s*)(ADDR(c) + (s)))
 
 static inline void assert_c_size (const chunk_size_t s) {
     assert(s & C_SIZE); // NÃO É 0
@@ -231,52 +220,8 @@ static void assert_c_free (const chunk_s* const c) {
 #define assert_c_free(c) ({ typeof(c) __c = (c); dbg("CHECKING FREE CHUNK BX%llX", BOFFSET(__c)); assert_c_free(__c); })
 #define assert_c_size(s) ({ typeof(s) __s = (s); dbg("CHECKING CHUNK SIZE %llu", (uintll)__s); assert_c_size(__s); })
 
-    //assert_aligned ( c_data(c) , DATA_ALIGNMENT );
-
-            //assert ( *chunk->ptr == chunk );
-            //if (chunk->next) {
-                //C_SIZE_FREE ( chunk->size );
-                //assert ( chunk->next->ptr == &chunk->next );
-            //}
-            //assert_in_buff ( chunk->ptr, sizeof(chunk_s*) );
-        //assert ( size == c_size_decode(c_size2(chunk, size)) );
-        //assert ( c_right(chunk, size) == ((void*)chunk + size) );
-        //assert_in_chunks ( chunk, size );
-
-//assert(C_FREE(used)->next == NULL || C_FREE((C_FREE(used)->next))->ptr == &C_FREE(used)->next);
-//assert ( C_SIZE_MIN <= f_get_size(used) && f_get_size(used) <= C_SIZE_MAX && (f_get_size(used) % 8) == 0 );
-
 // TODO: FIXME: outra verificação, completa
 // C_CHUNK(c) o chunk é válido, levando em consideração qual tipo é
-
-// ESCOLHE O PRIMEIRO PTR
-// BASEADO NESTE SIZE, SELECINAR UM PTR
-// A PARTIR DESTE PTR É GARANTIDO QUE TODOS OS CHUNKS TENHAM ESTE TAMANHO
-
-// PARA DEIXAR MAIS SIMPLES/MENOS INSTRUCOES
-// - O LAST TEM QUE SER UM TAMANHO TAO GRANDE QUE JAMAIS SOLICITAREMOS
-// f_ptr_root_get() na hora de pegar, usar o ANTEPENULTIMO como limite????
-//  e o que mais????
-
-// SE SIZE < ROOTS_SIZES_0, ENTÃO NÃO HAVERIA ONDE SER COLOCADO
-//      NOTE: C_SIZE_MIN >= ROOTS_SIZES_0, ENTÃO size >= ROOTS_SIZES_0
-
-// (128*1024)/4096 = 32  - tamanhos de C_SIZE_MIN a (C_SIZE_MIN + 128*1024), de 32 em 32 bytes
-// [(64*1024)//4096, (64*1024*1024)//4096, (128*1024*1024)//4096, (2*1024*1024*1024)//4096]
-// [16, 16384, 32768, 524288]
-#define ROOTS_0_MAX (       64*1024)
-#define ROOTS_1_MAX (  64*1024*1024)
-#define ROOTS_2_MAX ( 128*1024*1024)
-#define ROOTS_3_MAX (1024*1024*1024)
-
-
-// [( 32 + s * ((64*1024)//4096)  ) for s in range(64)] -> [32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512, 528, 544, 560, 576, 592, 608, 624, 640, 656, 672, 688, 704, 720, 736, 752, 768, 784, 800, 816, 832, 848, 864, 880, 896, 912, 928, 944, 960, 976, 992, 1008, 1024, 1040]
-// O PRIMEIRO WORD DE 64 BITS JÁ MAPEIA TAMANHOS ATÉ 1040 BYTES
-
-
-// USAR OUTRA PALAVRA DE 64-BITS PARA DIZER QUAIS GRUPOS ESTÃO VAZIOS? :/
-//      um 64-bits mapeia os demais 64-bits
-//
 
 static inline uint root_put_idx (u64 size) {
 
