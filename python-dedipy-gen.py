@@ -48,7 +48,8 @@ ROOTS_GROUPS_OFFSET_4  = 4 * ROOTS_GROUP_SIZE
 ROOTS_GROUPS_OFFSET_5  = 5 * ROOTS_GROUP_SIZE
 ROOTS_GROUPS_OFFSET_6  = 6 * ROOTS_GROUP_SIZE
 ROOTS_GROUPS_OFFSET_7  = 7 * ROOTS_GROUP_SIZE
-ROOTS_GROUPS_OFFSET_8  = 8 * ROOTS_GROUP_SIZE
+#
+ROOTS_N                = 8 * ROOTS_GROUP_SIZE
 
 # COUNT RIGHT ZERO BITS
 ROOTS_DIV_0 = sum(((1 << n) < (ROOTS_MAX_0 // ROOTS_GROUP_SIZE)) for n in range(64))
@@ -98,7 +99,7 @@ def put_idx(size):
     if (size <= (ROOTS_MAX_6 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_5 ; return (size >> ROOTS_DIV_6) + ROOTS_GROUPS_OFFSET_6
     if (size <= (ROOTS_MAX_7 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_6 ; return (size >> ROOTS_DIV_7) + ROOTS_GROUPS_OFFSET_7
 
-    return ROOTS_GROUPS_OFFSET_8 - 1
+    return ROOTS_N - 1
 
 def get_idx(size):
 
@@ -112,7 +113,7 @@ def get_idx(size):
     if (size <= (ROOTS_MAX_6 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_5 ; return (size >> ROOTS_DIV_6) + (not not (size & ROOTS_GROUPS_REMAINING_6)) + ROOTS_GROUPS_OFFSET_6
     if (size <= (ROOTS_MAX_7 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_6 ; return (size >> ROOTS_DIV_7) + (not not (size & ROOTS_GROUPS_REMAINING_7)) + ROOTS_GROUPS_OFFSET_7
 
-    return ROOTS_GROUPS_OFFSET_8 - 1
+    return ROOTS_N - 1
 
 TESTS = range(C_SIZE_MIN, C_SIZE_MIN+70)
 
@@ -132,6 +133,8 @@ print(f'''
     {GROUP6_SAMPLE}
     {GROUP7_SAMPLE}
 */
+
+#define ROOTS_N {ROOTS_N}
 
 #define ROOTS_GROUP_SIZE {ROOTS_GROUP_SIZE}
 
