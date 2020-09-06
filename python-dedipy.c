@@ -50,11 +50,13 @@
 
 #include "python-dedipy-gen.h"
 
-#define BOFFSET(x) ((x) ?  ((uintll)((void*)(x) - (void*)BUFF)) : 0ULL)
+#define BOFFSET(x) ((x) ?  ((uintll)((const void*)(x) - (const void*)BUFF)) : 0ULL)
 
 typedef struct BufferInfo BufferInfo;
 
 struct BufferInfo {
+    void* lmt;
+    u64 size;
     u16 cpu;
     u16 id;
     u16 n; // quantos processos tem
@@ -66,20 +68,34 @@ struct BufferInfo {
     u64 pid;
     u64 started;
     u64 start;
-    u64 size;
     u64 total; // TOTAL MEMORY MAPPED
 };
 
-#define BUFF_INFO          ((BufferInfo*)(BUFF))
-#define BUFF_ROOTS           ((chunk_s**)(BUFF + sizeof(BufferInfo)))
-#define BUFF_ROOTS_LST       ((chunk_s**)(BUFF + sizeof(BufferInfo) + sizeof(chunk_s*)*(ROOTS_N - 1)))
-#define BUFF_ROOTS_LMT       ((chunk_s**)(BUFF + sizeof(BufferInfo) + sizeof(chunk_s*)*(ROOTS_N    )))
-#define BUFF_L           ((chunk_size_t*)(BUFF + sizeof(BufferInfo) + sizeof(chunk_s*)*(ROOTS_N    )))
-#define BUFF_CHUNKS                      (BUFF + sizeof(BufferInfo) + sizeof(chunk_s*)*(ROOTS_N    ) + sizeof(u64))
-#define BUFF_R           ((chunk_size_t*)(BUFF + BUFF_INFO->size - sizeof(u64)))
-#define BUFF_LMT                         (BUFF + BUFF_INFO->size)
+/*
+    TOP u64
 
-#define BUFF_CHUNKS_SIZE ((BUFF_INFO->size) - sizeof(BufferInfo) - ROOTS_N*sizeof(chunk_s*) - sizeof(u64) - sizeof(u64))
+    ROOTS_N / N_BITS = TOPS_N
+    65536 / 64 = 1024
+
+    cada bit mapeia um dos 1024 grupos
+
+    TOPS u64[TOPS_N]
+*/
+
+#define TOPS_N 1024
+
+#define BUFF_INFO          ((BufferInfo*)(BUFF))
+#define BUFF_TOP                  ((u64*)(BUFF + sizeof(BufferInfo)))
+#define BUFF_TOPS                ((u64**)(BUFF + sizeof(BufferInfo) + sizeof(u64)))
+#define BUFF_ROOTS           ((chunk_s**)(BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64)))
+#define BUFF_ROOTS_LST       ((chunk_s**)(BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N - 1)))
+#define BUFF_ROOTS_LMT       ((chunk_s**)(BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    )))
+#define BUFF_L           ((chunk_size_t*)(BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    )))
+#define BUFF_CHUNKS                      (BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    ) + sizeof(chunk_size_t))
+#define BUFF_R           ((chunk_size_t*)(BUFF_INFO->lmt - sizeof(chunk_size_t)))
+#define BUFF_LMT                         (BUFF_INFO->lmt)
+
+#define BUFF_CHUNKS_SIZE ((BUFF_INFO->lmt - BUFF) - sizeof(BufferInfo) - sizeof(u64) - TOPS_N*sizeof(u64) - ROOTS_N*sizeof(chunk_s*) - sizeof(chunk_size_t) - sizeof(chunk_size_t))
 
 #define CHUNK_ALIGNMENT 8ULL
 #define DATA_ALIGNMENT 8ULL
@@ -109,39 +125,21 @@ struct chunk_s {
 };
 
 #define c_size_decode(s)      ((s) & C_SIZE)
-#define c_size_is_free(s)     ((s) & C_FREE)
-#define c_size_is_used(s)     ((s) & C_USED)
-
-#define c_size_encode_free(s) ((s) | C_FREE)
-#define c_size_encode_used(s) ((s) | C_USED)
-
 #define c_data(c) ((void*)(c) + sizeof(chunk_size_t))
 #define c_data_size(s) ((u64)(s) - 2*sizeof(chunk_size_t)) // DADO UM CHUNK USED DE TAL TAMANHO, CALCULA O TAMANHO DOS DADOS
-#define c_next_(c) ((void*)&((((chunk_s*)(c))->next)))
 #define c_size2(c, s) ((chunk_size_t*)((void*)(c) + (u64)(s) - sizeof(chunk_size_t)))
 
 #define c_from_data(d) ((void*)(d) - sizeof(chunk_size_t))
 
-#define c_is_free(c) c_size_is_free(((chunk_s*)(c))->size)
-#define c_is_used(c) c_size_is_used(((chunk_s*)(c))->size)
-
-#define c_get_size(c) c_size_decode(((chunk_s*)(c))->size)
-#define c_get_ptr(c) ((void**)(((chunk_s*)(c))->ptr))
-#define c_get_next(c) ((void*)(((chunk_s*)(c))->next))
 #define c_get_size2(c, s) c_size_decode(*c_size2(c, s))
-
-#define c_set_size_free(c, s) (((chunk_s*)(c))->size = c_size_encode_free(s))
-#define c_set_size_used(c, s) (((chunk_s*)(c))->size = c_size_encode_used(s))
-#define c_set_ptr(c, p)  (((chunk_s*)(c))->ptr = (chunk_s**)(p))
-#define c_set_next(c, n) (((chunk_s*)(c))->next = (chunk_s*)(n))
 
 #define c_left(c) ({ void* const __c = (c); (__c - c_left_get_size(__c)); })
 #define c_left_get_size(c) c_size_decode(*(chunk_size_t*)((void*)(c) - sizeof(chunk_size_t)))
 
 #define c_right(c, s) ((void*)(c) + (s))
 
-#define ASSERT_ADDR_IN_BUFFER(a) assert( BUFF <= (void*)(a) && (void*)(a) < BUFF_LMT )
-#define ASSERT_ADDR_IN_CHUNKS(a) assert( (void*)BUFF_CHUNKS <= (void*)(a) && (void*)(a) < (void*)BUFF_R )
+#define ASSERT_ADDR_IN_BUFFER(a) assert( BUFF <= (const void*)(a) && (const void*)(a) < BUFF_LMT )
+#define ASSERT_ADDR_IN_CHUNKS(a) assert( (const void*)BUFF_CHUNKS <= (const void*)(a) && (const void*)(a) < (const void*)BUFF_R )
 
 static void* BUFF;
 
@@ -220,7 +218,7 @@ void dedipy_free (void* const d) {
     if (d) {
         chunk_s* c = c_from_data(d);
 
-        u64 s = c_get_size(c);
+        u64 s = c->size & C_SIZE;
 
         chunk_s* const left = c_left(c);
 
@@ -387,8 +385,6 @@ static void dedipy_test_verify (void) {
     assert ( *BUFF_L == C_DUMMY );
     assert ( *BUFF_R == C_DUMMY );
 
-    assert( (BUFF + BUFF_INFO->size) == BUFF_LMT );
-
     u64 totalFree = 0;
     u64 totalUsed = 0;
 
@@ -467,7 +463,7 @@ static void dedipy_test_verify (void) {
 
         while (c) { const u64 s = c->size & C_SIZE;
             ASSERT_ADDR_IN_CHUNKS(c);
-            ASSERT_ADDR_IN_CHUNKS((void*)c + s - 1);
+            ASSERT_ADDR_IN_CHUNKS((const void*)c + s - 1);
             assert(s >= C_SIZE_MIN);
             assert(s <  C_SIZE_MAX);
             assert(c->size & C_FREE);
@@ -595,6 +591,7 @@ void dedipy_main (void) {
 
     memset(BUFF, 0, buffSize);
 
+    BUFF_INFO->lmt      = BUFF + buffSize;
     BUFF_INFO->cpu      = (u16)cpu;
     BUFF_INFO->id       = (u16)id;
     BUFF_INFO->n        = (u16)n;
@@ -604,11 +601,10 @@ void dedipy_main (void) {
     BUFF_INFO->pid      = (u64)pid;
     BUFF_INFO->started  = (u64)started;
     BUFF_INFO->start    = (u64)buffStart;
-    BUFF_INFO->size     = (u64)buffSize;
     BUFF_INFO->total    = (u64)buffTotal;
 
     char name[256];
-DBGPRINT("TAMO AQUI MANO");
+
     if (snprintf(name, sizeof(name), PROGNAME "#%u", (uint)BUFF_INFO->id) < 2 || prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0))
         fatal("FAILED TO SET PROCESS NAME");
 
@@ -642,7 +638,6 @@ DBGPRINT("TAMO AQUI MANO");
     dbg("BUFF_INFO->pid %llu",   (uintll)BUFF_INFO->pid);
     dbg("BUFF_INFO->cpu %llu",   (uintll)BUFF_INFO->cpu);
     dbg("BUFF_INFO->start %llu", (uintll)BUFF_INFO->start);
-    dbg("BUFF_INFO->size %llu",  (uintll)BUFF_INFO->size);
     dbg("BUFF_INFO->code %llu",  (uintll)BUFF_INFO->code);
 
     ASSERT_ADDR_IN_BUFFER(BUFF_CHUNKS);
