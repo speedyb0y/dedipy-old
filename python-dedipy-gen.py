@@ -3,9 +3,6 @@
 # GENERATE python-dedipy-gen.h
 #
 
-# COUNT RIGHT ZERO BITS
-# sum(((1 << n) < ROOTS_GROUP_SIZE) for n in range(64))
-
 C_SIZE_MIN = 32
 
 ROOTS_GROUP_SIZE = 8192
@@ -42,15 +39,7 @@ ROOTS_GROUPS_REMAINING_5 = (ROOTS_MAX_5 // ROOTS_GROUP_SIZE) - 1
 ROOTS_GROUPS_REMAINING_6 = (ROOTS_MAX_6 // ROOTS_GROUP_SIZE) - 1
 ROOTS_GROUPS_REMAINING_7 = (ROOTS_MAX_7 // ROOTS_GROUP_SIZE) - 1
 
-ROOTS_DIV_0 = sum(((1 << n) < (ROOTS_MAX_0 // ROOTS_GROUP_SIZE)) for n in range(64))
-ROOTS_DIV_1 = sum(((1 << n) < (ROOTS_MAX_1 // ROOTS_GROUP_SIZE)) for n in range(64))
-ROOTS_DIV_2 = sum(((1 << n) < (ROOTS_MAX_2 // ROOTS_GROUP_SIZE)) for n in range(64))
-ROOTS_DIV_3 = sum(((1 << n) < (ROOTS_MAX_3 // ROOTS_GROUP_SIZE)) for n in range(64))
-ROOTS_DIV_4 = sum(((1 << n) < (ROOTS_MAX_4 // ROOTS_GROUP_SIZE)) for n in range(64))
-ROOTS_DIV_5 = sum(((1 << n) < (ROOTS_MAX_5 // ROOTS_GROUP_SIZE)) for n in range(64))
-ROOTS_DIV_6 = sum(((1 << n) < (ROOTS_MAX_6 // ROOTS_GROUP_SIZE)) for n in range(64))
-ROOTS_DIV_7 = sum(((1 << n) < (ROOTS_MAX_7 // ROOTS_GROUP_SIZE)) for n in range(64))
-
+#
 ROOTS_GROUPS_OFFSET_0  = 0 * ROOTS_GROUP_SIZE
 ROOTS_GROUPS_OFFSET_1  = 1 * ROOTS_GROUP_SIZE
 ROOTS_GROUPS_OFFSET_2  = 2 * ROOTS_GROUP_SIZE
@@ -60,6 +49,16 @@ ROOTS_GROUPS_OFFSET_5  = 5 * ROOTS_GROUP_SIZE
 ROOTS_GROUPS_OFFSET_6  = 6 * ROOTS_GROUP_SIZE
 ROOTS_GROUPS_OFFSET_7  = 7 * ROOTS_GROUP_SIZE
 ROOTS_GROUPS_OFFSET_8  = 8 * ROOTS_GROUP_SIZE
+
+# COUNT RIGHT ZERO BITS
+ROOTS_DIV_0 = sum(((1 << n) < (ROOTS_MAX_0 // ROOTS_GROUP_SIZE)) for n in range(64))
+ROOTS_DIV_1 = sum(((1 << n) < (ROOTS_MAX_1 // ROOTS_GROUP_SIZE)) for n in range(64))
+ROOTS_DIV_2 = sum(((1 << n) < (ROOTS_MAX_2 // ROOTS_GROUP_SIZE)) for n in range(64))
+ROOTS_DIV_3 = sum(((1 << n) < (ROOTS_MAX_3 // ROOTS_GROUP_SIZE)) for n in range(64))
+ROOTS_DIV_4 = sum(((1 << n) < (ROOTS_MAX_4 // ROOTS_GROUP_SIZE)) for n in range(64))
+ROOTS_DIV_5 = sum(((1 << n) < (ROOTS_MAX_5 // ROOTS_GROUP_SIZE)) for n in range(64))
+ROOTS_DIV_6 = sum(((1 << n) < (ROOTS_MAX_6 // ROOTS_GROUP_SIZE)) for n in range(64))
+ROOTS_DIV_7 = sum(((1 << n) < (ROOTS_MAX_7 // ROOTS_GROUP_SIZE)) for n in range(64))
 
 g0 = ['%10d'%(idx*(ROOTS_MAX_0//ROOTS_GROUP_SIZE)) for idx in range(ROOTS_GROUP_SIZE)]
 g1 = ['%10d'%(idx*(ROOTS_MAX_1//ROOTS_GROUP_SIZE)) for idx in range(ROOTS_GROUP_SIZE)]
