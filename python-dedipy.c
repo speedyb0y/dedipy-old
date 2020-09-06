@@ -445,29 +445,28 @@ void* dedipy_malloc (const size_t size_) {
 
     assert_c_size(size);
 
-    // ENCONTRA A PRIMEIRA LISTA LIVRE
     chunk_s** ptr = root_get_ptr(size);
 
     assert(ptr >= BUFF_ROOTS && ptr < (BUFF_ROOTS + ROOTS_N) && ((addr_t)ptr % sizeof(chunk_s*)) == 0);
 
-    chunk_s* used; // PEGA UM LIVRE A SER USADO
-    // LOGO APÓS O HEADS, HÁ O LEFT CHUNK, COM UM SIZE FAKE 1, PORTANTO ELE É NÃO-NULL, E VAI PARAR SE NAO TIVER MAIS CHUNKS LIVRES
+    chunk_s* used;
+
     while ((used = *ptr) == NULL)
         ptr++;
 
     if (used == (chunk_s*)BUFF_LR_VALUE)
-        return NULL; // SAIU DOS ROOTS E NÃO ENCONTROU NENHUM
+        return NULL;
 
     assert_c_free(used);
 
-    // REMOVE ELE DE SUA LISTA, MESMO QUE SÓ PEGUEMOS UM PEDAÇO, VAI TER REALOCÁ-LO NA TREE
     c_unregister(used);
 
     u64 usedSize = used->size & C_SIZE;
-    // TAMANHO QUE ELE FICARIA AO RETIRAR O CHUNK
+
+    assert_c_size(usedSize);
+
     const u64 freeSizeNew = usedSize - size;
 
-    // SE DER, CONSOME SÓ UMA PARTE, NO FINAL DELE
     if (freeSizeNew >= C_SIZE_MIN) {
         c_free_fill_and_register(used, freeSizeNew);
         used = c_right(used, freeSizeNew);
@@ -477,8 +476,6 @@ void* dedipy_malloc (const size_t size_) {
     *c_size2(used, usedSize) = used->size = usedSize | C_USED;
 
     assert_c_used(used);
-
-    dedipy_verify();
 
     return c_data(used);
 }
