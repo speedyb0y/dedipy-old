@@ -83,6 +83,13 @@
 
 #include "python-dedipy-gen.h"
 
+#undef malloc
+#define malloc ((void)0)
+#undef free
+#define free ((void)0)
+#undef realloc
+#define realloc ((void)0)
+
 #define BUFF_ROOTS   ((chunk_s**)    ((addr_t)buff ))
 #define BUFF_L       ((chunk_size_t*)((addr_t)buff + ROOTS_N*sizeof(chunk_s*) ))
 #define BUFF_CHUNKS  ((chunk_s*     )((addr_t)buff + ROOTS_N*sizeof(chunk_s*) + sizeof(chunk_size_t)))
@@ -135,14 +142,11 @@ static int buffFD;
 // MAS TAMBÉM NÃO PODE SER EQUIVALENTE A UM PONTEIRO PARA UM CHUNK
 // TEM QUE SER USED, PARA QUE NUNCA TENTEMOS ACESSÁ-LO NA HORA DE JOIN LEFT/RIGHT
 // O MENOR TAMANHO POSSÍVEL; SE TENTARMOS ACESSAR ELE, VAMOS DESCOBRIR COM O assert SIZE >= MIN
-#define BUFF_LR_VALUE C_LEFT
-
-#define C_FLAGS 0b00000000000000000000000000000000000000000000001111ULL
+#define C_FLAGS 0b00000000000000000000000000000000000000000000000111ULL
 #define C_FREE  0b00000000000000000000000000000000000000000000000001ULL
 #define C_USED  0b00000000000000000000000000000000000000000000000010ULL
-#define C_LEFT  0b00000000000000000000000000000000000000000000000100ULL
-#define C_RIGHT 0b00000000000000000000000000000000000000000000001000ULL
-#define C_SIZE  0b11111111111111111111111111111111111111111111110000ULL // ALSO C_SIZE_MAX
+#define C_DUMMY 0b00000000000000000000000000000000000000000000000100ULL
+#define C_SIZE  0b11111111111111111111111111111111111111111111111000ULL // ALSO C_SIZE_MAX
 
 #define C_SIZE_MIN 32ULL
 #define C_SIZE_MAX C_SIZE
@@ -178,7 +182,7 @@ static inline void assert_c_size (const chunk_size_t s) {
 // COISAS REPETITIVAS, MAS É PARA TESTAR AS FUNÇÕES TAMBÉM
 static void assert_c_used (const chunk_s* const c) {
     /* CHUNK */
-    assert(is_aligned((addr_t)c, CHUNK_ALIGNMENT));
+    assert((ADDR(c) % CHUNK_ALIGNMENT) == 0);
     assert(in_chunks(c, C_SIZE_MIN));
     assert(in_chunks(c, c->size & C_SIZE));
     /* SIZES */
@@ -189,7 +193,7 @@ static void assert_c_used (const chunk_s* const c) {
     assert(c->size == *c_size2(c, c->size & C_SIZE));
     /* DATA */
     assert(c_from_data(c_data(c)) == c);
-    assert(is_aligned(((addr_t)(char*)(c_data(c))), DATA_ALIGNMENT));
+    assert((ADDR(c_data(c)) % DATA_ALIGNMENT) == 0);
 }
 
 static void assert_c_free (const chunk_s* const c) {
@@ -275,7 +279,12 @@ static inline void c_free_fill_and_register (chunk_s* const c, const u64 s) {
 
     *c_size2(c, s) = c->size = s | C_FREE;
 
-    if ((c->next = *(c->ptr = root_put_ptr(s))))
+    chunk_s** const ptr = root_put_ptr(s);
+
+    assert(ptr >= BUFF_ROOTS && ptr < (BUFF_ROOTS + ROOTS_N) && ((addr_t)ptr % sizeof(chunk_s*)) == 0);
+
+    c->ptr = ptr;
+    if ((c->next = *c->ptr))
         c->next->ptr = &c->next;
     *c->ptr = c;
 
@@ -306,18 +315,18 @@ static void dedipy_verify (void) {
     assert(in_chunks (BUFF_CHUNKS, BUFF_CHUNKS->size & C_SIZE));
 
     // LEFT/RIGHT
-    assert(*BUFF_L == BUFF_LR_VALUE);
-    assert(*BUFF_R == BUFF_LR_VALUE);
+    assert(*BUFF_L == C_DUMMY);
+    assert(*BUFF_R == C_DUMMY);
 
     assert(in_buff(BUFF_L, sizeof(chunk_size_t)));
     assert(in_buff(BUFF_R, sizeof(chunk_size_t)));
 
-    assert((buff + buffSize) == BUFF_LMT);
+    assert(ADDR(buff + buffSize) == ADDR(BUFF_LMT));
 
-    assert((void*)(BUFF_ROOTS + ROOTS_N) == (void*)BUFF_L);
+    assert(ADDR(BUFF_ROOTS + ROOTS_N) == ADDR(BUFF_L));
 
-    assert(*BUFF_L == BUFF_LR_VALUE);
-    assert(*BUFF_R == BUFF_LR_VALUE);
+    assert(*BUFF_L == C_DUMMY);
+    assert(*BUFF_R == C_DUMMY);
     assert(*BUFF_L == *BUFF_R);
 
     // O LEFT TEM QUE SER INTERPRETADO COMO NÃO NULL
@@ -379,6 +388,7 @@ static void dedipy_verify (void) {
 }
 
 void* dedipy_malloc (const size_t size_) {
+#define dedipy_malloc(b) ({ size_t __b = (b); dbg("dedipy_malloc(%llu)", (uintll)__b); void* __ret = dedipy_malloc(__b); dbg("dedipy_malloc() -> BX%llX", BOFFSET(__ret)); __ret; })
 
     if (size_ == 0)
         return NULL;
@@ -399,7 +409,7 @@ void* dedipy_malloc (const size_t size_) {
     while ((used = *ptr) == NULL)
         ptr++;
 
-    if (used == (chunk_s*)BUFF_LR_VALUE)
+    if (used == (chunk_s*)C_DUMMY)
         return NULL;
 
     assert_c_free(used);
@@ -441,31 +451,35 @@ void* dedipy_calloc (size_t n, size_t size_) {
 }
 
 void dedipy_free (void* const data) {
+#define dedipy_free(a) ({ void* __a =(a); dbg("dedipy_free(BX%llX)", BOFFSET(__a)); dedipy_free(__a); dbg("dedipy_free() -> void"); })
 
     if (data) {
         // VAI PARA O COMEÇO DO CHUNK
         chunk_s* c = c_from_data(data);
-
+dbg("FREE CHUNK BX%llX DATA BX%llX SIZE %llu", BOFFSET(c), BOFFSET(data), (uintll)(c->size & C_SIZE));
         assert_c_used(c);
 
         u64 size = c->size & C_SIZE;
 
-        chunk_size_t ss = c_left_size(c);
+        assert_c_size(size);
 
-        // JOIN WITH THE LEFT CHUNK
-        if (ss & C_FREE) {
+        chunk_size_t ss;
+
+        if ((ss = c_left_size(c)) & C_FREE) {
             ss &= C_SIZE;
             size += ss;
             c = (chunk_s*)((addr_t)c - ss);
+            assert_c_free(c);
             c_unregister(c);
         }
 
-        ss = c_right(c, size)->size;
-        // JOIN WITH THE RIGHT CHUNK
-        if (ss & C_FREE) {
+        chunk_s* const right = c_right(c, size);
+
+        if ((ss = right->size) & C_FREE) {
             ss &= C_SIZE;
             size += ss;
-            c_unregister(c);
+            assert_c_free(right);
+            c_unregister(right);
         }
 
         c_free_fill_and_register(c, size);
@@ -474,27 +488,19 @@ void dedipy_free (void* const data) {
     }
 }
 
-// The  realloc()  function returns a pointer to the newly allocated memory, which is suitably aligned for any built-in type, or NULL if the request failed.
-// The returned pointer may be the same as ptr if the allocation was not moved (e.g., there was room to expand the allocation in-place),
-//    or different from ptr if the allocation was moved to a new address.
-// If size was equal to 0, either NULL or a pointer suitable to be passed to free() is returned.
-// If realloc() fails, the original block is left untouched; it is not freed or moved.
 void* dedipy_realloc (void* const _data, const size_t dataSizeNew_) {
+#define dedipy_realloc(a, b) ({ void* __a =(a); size_t __b = (b); dbg("dedipy_realloc(BX%llX, %llu)", BOFFSET(__a), (uintll)__b); void* __ret = dedipy_realloc(__a, __b); dbg("dedipy_realloc() -> BX%llX", BOFFSET(__ret)); __ret; })
 
-    dbg("REALLOC CHUNK DATA BX%llX TO SIZE %llu", BOFFSET(_data), (uintll)dataSizeNew_);
-
-    if (_data == NULL)
+    if (_data == NULL) // GLIBC: IF PTR IS NULL, THEN THE CALL IS EQUIVALENT TO MALLOC(SIZE), FOR ALL VALUES OF SIZE
         return dedipy_malloc(dataSizeNew_);
 
-    if (dataSizeNew_ == 0) {
-        dedipy_free(c_from_data(_data));
+    if (dataSizeNew_ == 0) { // GLIBC: IF SIZE IS EQUAL TO ZERO, AND PTR IS NOT NULL, THEN THE CALL IS EQUIVALENT TO FREE(PTR)
+        dedipy_free(_data);
         return NULL;
     }
 
-    // CONSIDERA O CHUNK INTEIRO, E O ALINHA
     u64 sizeNew = c_size_from_requested_data_size(dataSizeNew_);
 
-    // FOI NOS PASSADO O DATA; VAI PARA O CHUNK
     chunk_s* const chunk = c_from_data(_data);
 
     assert_c_used(chunk);
@@ -508,40 +514,46 @@ void* dedipy_realloc (void* const _data, const size_t dataSizeNew_) {
         return _data;
     }
 
-    chunk_s* right; u64 sizeNeeded, rightSize, rightSizeNew;
+    chunk_s* right = c_right(chunk, size);
 
-    if ((rightSize = (right = c_right(chunk, size))->size & C_SIZE) && rightSize >= (sizeNeeded = sizeNew - size)) {
+    u64 rightSize = right->size;
 
-        c_unregister(right);
+    if (rightSize & C_FREE) {
+        rightSize &= C_SIZE;
 
-        if ((rightSizeNew = rightSize - sizeNeeded) >= C_SIZE_MIN) { // PEGA ESTE PEDAÇO DELE, PELA ESQUERDA
-            size += sizeNeeded;
-            right += sizeNeeded; // MOVE O COMEÇO PARA A DIREITA E O REGISTRA
-            c_free_fill_and_register(right, rightSizeNew);
-        } else // CONSOME ELE POR INTEIRO
-            size += rightSize;
+        assert_c_free(right);
 
-        *c_size2(chunk, size) = chunk->size = size | C_USED;
+        u64 sizeNeeded = sizeNew - size;
 
-        assert_c_used(chunk);
+        if (rightSize >= sizeNeeded) {
 
-        return c_data(chunk);
+            c_unregister(right);
+
+            u64 rightSizeNew = rightSize - sizeNeeded;
+
+            if (rightSizeNew >= C_SIZE_MIN) { // PEGA ESTE PEDAÇO DELE, PELA ESQUERDA
+                size += sizeNeeded;
+                right = (chunk_s*)(ADDR(right) + sizeNeeded);
+                c_free_fill_and_register(right, rightSizeNew);
+            } else // CONSOME ELE POR INTEIRO
+                size += rightSize;
+
+            *c_size2(chunk, size) = chunk->size = size | C_USED;
+
+            assert_c_used(chunk);
+
+            return c_data(chunk);
+        }
     }
 
-    // NAO TEM ESPAÇO NA DIREITA; ALOCA UM NOVO
     void* const data = dedipy_malloc(dataSizeNew_);
 
-    if (data) { // CONSEGUIU
-        // COPIA DO CHUNK ORIGINAL
+    if (data) {
         memcpy(data, _data, c_data_size(size));
-        // LIBERA O CHUNK ORIGINAL
-        dedipy_free(c_data(chunk));
+
+        dedipy_free(_data);
 
         assert_c_used(c_from_data(data));
-
-        dbg("REALLOCED TO CHUNK BX%llX DATA BX%llX CHUNK SIZE %llu", BOFFSET(c_from_data(data)), BOFFSET(data), (uintll)(c_from_data(data)->size & C_SIZE));
-    } else {
-        dbg("REALLOC FAILED");
     }
 
     return data;
@@ -711,14 +723,18 @@ void dedipy_main (void) {
     pid       = (u64)pid_;
     started   = (u64)started_;
 
-    //
-    memset((void*)buff, 0, buffSize);
-
     // var + 14*16, strlen(var + 14*16)
     char name[256];
 
     if (snprintf(name, sizeof(name), PROGNAME "#%u", id) < 2 || prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0))
         fatal("FAILED TO SET PROCESS NAME");
+
+    //
+    memset((void*)buff, 0, buffSize);
+
+    // LEFT AND RIGHT
+    *BUFF_L = C_DUMMY;
+    *BUFF_R = C_DUMMY;
 
     // A CHANGE ON THOSE MAY REQUIRE A REVIEW
     assert(8 == sizeof(chunk_size_t));
@@ -736,7 +752,9 @@ void dedipy_main (void) {
 
     assert((C_SIZE & (C_FREE | c_size_from_requested_data_size(0))) == C_SIZE_MIN);
     assert((C_SIZE & (C_FREE | c_size_from_requested_data_size(1))) == C_SIZE_MIN);
-    assert((C_SIZE & (C_FREE | c_size_from_requested_data_size(sizeof(chunk_s)))) == C_SIZE_MIN);
+    dbg("%llu", (uintll)( (C_SIZE & (C_FREE | c_size_from_requested_data_size(sizeof(chunk_s))))));
+    assert((C_SIZE & (C_FREE | c_size_from_requested_data_size(2*sizeof(chunk_size_t)))) == C_SIZE_MIN);
+    assert((C_SIZE & (C_FREE | c_size_from_requested_data_size(C_SIZE_MIN - 2*sizeof(chunk_size_t)))) == C_SIZE_MIN);
 
     assert((C_SIZE & (C_FREE | 65536ULL)) == 65536ULL);
     assert((C_SIZE & (C_USED | 65536ULL)) == 65536ULL);
@@ -746,10 +764,6 @@ void dedipy_main (void) {
 
     assert(root_get_ptr(16ULL*1024*1024*1024*1024) == (BUFF_ROOTS + (ROOTS_N - 1)));
     assert(root_put_ptr(16ULL*1024*1024*1024*1024) <= (BUFF_ROOTS + (ROOTS_N - 1))); // COMO VAI ARREDONDAR PARA BAIXO, PEDIR O MÁXIMO PODE CAIR LOGO ANTES DO ÚLTIMO SLOT
-
-    // LEFT AND RIGHT
-    *BUFF_L = BUFF_LR_VALUE;
-    *BUFF_R = BUFF_LR_VALUE;
 
     dbg("CRIANDO CHUNK 0 %llu", (uintll)BUFF_CHUNKS_SIZE);
 
@@ -811,8 +825,11 @@ void dedipy_main (void) {
     //assert(ROOTS_SIZES_0 <= c_size_from_requested_data_size((u64)1));
 
     assert(dedipy_malloc(0) == NULL);
-    assert(dedipy_realloc(BUFF_CHUNKS, 0) == NULL);
     assert(dedipy_realloc(NULL, 0) == NULL);
+
+    assert(dedipy_realloc(dedipy_malloc(1), 0) == NULL);
+    assert(dedipy_realloc(dedipy_malloc(0), 0) == NULL);
+    assert(dedipy_realloc(dedipy_malloc(65536), 0) == NULL);
 
     // NÃO TEM COMO DAR ASSERT LOL
     dedipy_free(NULL);
@@ -828,9 +845,7 @@ void dedipy_main (void) {
         do { u64 count = 0; void** last = NULL; void** this;
             //
             while ((this = dedipy_malloc(blockSize))) {
-#if 1
                 memset(this, 0, blockSize);
-#endif
                 *this = last;
                 last = this;
                 count += 1;
@@ -853,6 +868,9 @@ void dedipy_main (void) {
         while (c--) {
 
             dedipy_free(NULL);
+
+            assert(dedipy_malloc(0) == NULL);
+            assert(dedipy_realloc(NULL, 0) == NULL);
 
             dedipy_free(dedipy_malloc(dedipy_test_size(c + 1)));
             dedipy_free(dedipy_malloc(dedipy_test_size(c + 2)));
@@ -882,24 +900,37 @@ void dedipy_main (void) {
 
             // NOTE: cuidato com o dedipy_realloc(), só podemos realocar o ponteiro atual, e não os anteriores
             while ((new = dedipy_malloc((size = sizeof(void**) + dedipy_test_size(c))))) {
-                if (size & 1)
-                    memset(new, size & 0xFF, size);
-                if (dedipy_test_random(c) % 10 == 0)
-                    new = dedipy_realloc(new, dedipy_test_size(c)) ?: new;
+                assert(size >= sizeof(void**));
+                //memset(new, size & 0xFF, size);
+#if 1
+                if (dedipy_test_random(c) % 10 <= 3) {
+                    if ((size = sizeof(void**) + dedipy_test_size(c))) {
+                        //assert(dedipy_realloc(new, size) == NULL);
+                        //continue;
+                        void** new2 = dedipy_realloc(new, size);
+                        if (new2)
+                            new = new2;
+                    //memset(new, size & 0xFF, size);
+                    }
+                }
+#endif
+                assert(in_chunks(new, size));
                 // TODO: FIXME: uma porcentagem, dar dedipy_free() aqui ao invés de incluir na lista
                 *new = last;
                 last = new;
             }
 
             while (last) {
-                if (dedipy_test_random(c) % 10 == 0)
-                    last = dedipy_realloc(last, sizeof(void**) + dedipy_test_size(c)) ?: last;
+                //if (dedipy_test_random(c) % 10 == 0)
+                    //last = dedipy_realloc(last, sizeof(void**) + dedipy_test_size(c)) ?: last;
                 void** old = *last;
                 dedipy_free(last);
                 last = old;
             }
         }
     }
+
+    dedipy_verify();
 
     // TODO: FIXME: OUTRO TESTE: aloca todos com 4GB, depois com 1GB, até 8 bytes,
     // u64 size = 1ULL << 63;
@@ -930,4 +961,4 @@ void dedipy_main (void) {
 // Só precisamos do buff, pois ele é o root. as demais coisas sós ao acessadas para inicializar e verificar.
 // O restante é acessado diretamente, pelos ponteiros que o usuário possui.
 
-//
+// TODO: FIXME: GLIBC: RETURNS A POINTER TO THE NEWLY ALLOCATED MEMORY, WHICH IS SUITABLY ALIGNED FOR ANY BUILT-IN TYPE
