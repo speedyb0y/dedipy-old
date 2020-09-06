@@ -448,8 +448,7 @@ void* dedipy_malloc (const size_t size_) {
     // ENCONTRA A PRIMEIRA LISTA LIVRE
     chunk_s** ptr = root_get_ptr(size);
 
-    assert(ptr >= BUFF_ROOTS);
-    assert(ptr < (BUFF_ROOTS + ROOTS_N));
+    assert(ptr >= BUFF_ROOTS && ptr < (BUFF_ROOTS + ROOTS_N) && ((addr_t)ptr % sizeof(chunk_s*)) == 0);
 
     chunk_s* used; // PEGA UM LIVRE A SER USADO
     // LOGO APÓS O HEADS, HÁ O LEFT CHUNK, COM UM SIZE FAKE 1, PORTANTO ELE É NÃO-NULL, E VAI PARAR SE NAO TIVER MAIS CHUNKS LIVRES
@@ -500,10 +499,6 @@ void* dedipy_calloc (size_t n, size_t size_) {
 }
 
 void dedipy_free (void* const data) {
-
-    dbg("FREE DATA BX%llX", BOFFSET(data));
-
-    dedipy_verify();
 
     if (data) {
         // VAI PARA O COMEÇO DO CHUNK
