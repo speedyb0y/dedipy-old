@@ -176,12 +176,12 @@ static inline chunk_s* c_right (const chunk_s* const c, const chunk_size_t s)
     { return ((chunk_s*)((addr_t)c + s)); }
 
 static inline void assert_c_size (const chunk_size_t s) {
-    assert(s & C_SIZE);
-    assert(!(s & C_FLAGS));
-    assert(!((s & C_SIZE) % CHUNK_ALIGNMENT));
+    assert(s & C_SIZE); // NÃO É 0
+    assert((s & C_FLAGS) == 0); // NÃO TEM NENHUMA FLAG
+    assert(((s & C_SIZE) % CHUNK_ALIGNMENT) == 0); // ESTÁ ALINHADO
     assert((s & C_SIZE) >= C_SIZE_MIN);
     assert((s & C_SIZE) <= C_SIZE_MAX);
-    assert((s & C_SIZE) == (s));
+    assert((s & C_SIZE) == s); // O TAMANHO ESTÁ DENTRO DA MASK DE TAMANHO
 }
 
 // TEM QUE TER CERTEZA DE QUE A ESTRUTURA ESTÁ TODA NA MEMÓRIA
@@ -445,9 +445,13 @@ void* dedipy_malloc (const size_t size_) {
 
     assert_c_size(size);
 
-    chunk_s* used; // PEGA UM LIVRE A SER USADO
-    chunk_s** ptr = root_get_ptr(size); // ENCONTRA A PRIMEIRA LISTA LIVRE
+    // ENCONTRA A PRIMEIRA LISTA LIVRE
+    chunk_s** ptr = root_get_ptr(size);
 
+    assert(ptr >= BUFF_ROOTS);
+    assert(ptr < (BUFF_ROOTS + ROOTS_N));
+
+    chunk_s* used; // PEGA UM LIVRE A SER USADO
     // LOGO APÓS O HEADS, HÁ O LEFT CHUNK, COM UM SIZE FAKE 1, PORTANTO ELE É NÃO-NULL, E VAI PARAR SE NAO TIVER MAIS CHUNKS LIVRES
     while ((used = *ptr) == NULL)
         ptr++;
