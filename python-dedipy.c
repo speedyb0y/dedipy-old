@@ -108,11 +108,9 @@ struct BufferInfo {
 // O TAMANHO DO CHUNK TEM QUE CABER ELE QUANDO ESTIVER LIVRE
 #define c_size_from_data_size(dataSize) (_CHUNK_USED_SIZE(dataSize) > C_SIZE_MIN ? _CHUNK_USED_SIZE(dataSize) : C_SIZE_MIN)
 
-#define C_SIZE  0b111111111111111111111111111111111111111111111111000ULL
-#define C_FLAGS 0b000000000000000000000000000000000000000000000000111ULL
+#define C_SIZE  0b111111111111111111111111111111111111111111111111110ULL
 #define C_FREE  0b000000000000000000000000000000000000000000000000001ULL
-#define C_USED  0b000000000000000000000000000000000000000000000000010ULL
-#define C_DUMMY 0b000000000000000000000000000000000000000000000000100ULL
+#define C_DUMMY 0b000000000000000000000000000000000000000000000000010ULL // NÃO FREE, E O SUFICIENTE PARA NÃO SER INTERPRETADO COMO NULL
 
 typedef u64 chunk_size_t;
 
@@ -124,19 +122,14 @@ struct chunk_s {
     chunk_s* next;
 };
 
-#define c_size_decode(s)      ((s) & C_SIZE)
 #define c_data(c) ((void*)(c) + sizeof(chunk_size_t))
 #define c_data_size(s) ((u64)(s) - 2*sizeof(chunk_size_t)) // DADO UM CHUNK USED DE TAL TAMANHO, CALCULA O TAMANHO DOS DADOS
 #define c_size2(c, s) ((chunk_size_t*)((void*)(c) + (u64)(s) - sizeof(chunk_size_t)))
 
 #define c_from_data(d) ((void*)(d) - sizeof(chunk_size_t))
 
-#define c_get_size2(c, s) c_size_decode(*c_size2(c, s))
-
-#define c_left(c) ({ void* const __c = (c); (__c - c_left_get_size(__c)); })
-#define c_left_get_size(c) c_size_decode(*(chunk_size_t*)((void*)(c) - sizeof(chunk_size_t)))
-
-#define c_right(c, s) ((void*)(c) + (s))
+#define c_left(c) ((chunk_s*)(((void*)c - ((*(chunk_size_t*)((void*)c - sizeof(chunk_size_t))) & C_SIZE))))
+#define c_right(c, s) ((chunk_s*)((void*)c + s))
 
 #define ASSERT_ADDR_IN_BUFFER(a) assert( BUFF <= (const void*)(a) && (const void*)(a) < BUFF_LMT )
 #define ASSERT_ADDR_IN_CHUNKS(a) assert( (const void*)BUFF_CHUNKS <= (const void*)(a) && (const void*)(a) < (const void*)BUFF_R )
@@ -267,7 +260,7 @@ void* dedipy_malloc (size_t size_) {
         usedSize = size;
     }
 
-    *c_size2(used, usedSize) = used->size = usedSize | C_USED;
+    *c_size2(used, usedSize) = used->size = usedSize;
 
     return c_data(used);
 }
@@ -327,7 +320,7 @@ void* dedipy_realloc (void* const d_, const size_t dsNew_) {
             } else
                 s += rs;
 
-            *c_size2(c, s) = c->size = s | C_USED;
+            *c_size2(c, s) = c->size = s;
 
             return c_data(c);
         }
@@ -406,17 +399,14 @@ static void dedipy_test_verify (void) {
         //assert(in_chunks(c, s));
 
         assert(s & C_SIZE); // NÃO É 0
-        assert((s & C_FLAGS) == 0); // NÃO TEM NENHUMA FLAG
         assert((s & C_SIZE) >= C_SIZE_MIN);
         assert((s & C_SIZE) <= C_SIZE_MAX);
         assert((s & C_SIZE) == s); // O TAMANHO ESTÁ DENTRO DA MASK DE TAMANHO
         assert(((s & C_SIZE) % CHUNK_ALIGNMENT) == 0); // ESTÁ ALINHADO
 
-        assert((c->size & ~C_FLAGS) == (c->size & C_SIZE)); // O TAMANHO NÃO EXTRAPOLA A MASK DO SIZE
         assert(c->size == *c_size2(c, s));
 
         if (c->size & C_FREE) {
-            assert((c->size & C_FLAGS) == C_FREE);
             assert(c->ptr);
             //assert(in_buff(c->ptr, sizeof(chunk_s*)));
             assert(*c->ptr == c);
@@ -434,7 +424,6 @@ static void dedipy_test_verify (void) {
             totalFree += s;
             countFree++;
         } else {
-            assert((c->size & C_FLAGS) == C_USED); // FLAG USED ESTÁ SETADA, E SOMENTE ELA ESTÁ
             assert(c_from_data(c_data(c)) == c);
             assert(((uintptr_t)c_data(c) % DATA_ALIGNMENT) == 0);
             totalUsed += s;
