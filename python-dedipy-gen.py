@@ -90,29 +90,28 @@ GROUP7_SAMPLE = f'%8d {g7_a} {g7_b} {g7_c} {g7_d} {g7_e} ... {g7_n2} {g7_n1} {g7
 
 def put_idx(size):
 
-    size -= C_SIZE_MIN
-
-    assert (size >> ROOTS_DIV_0) == (size // (ROOTS_MAX_0//ROOTS_GROUP_SIZE))
-    assert (size >> ROOTS_DIV_1) == (size // (ROOTS_MAX_1//ROOTS_GROUP_SIZE))
-    assert (size >> ROOTS_DIV_2) == (size // (ROOTS_MAX_2//ROOTS_GROUP_SIZE))
-    assert (size >> ROOTS_DIV_3) == (size // (ROOTS_MAX_3//ROOTS_GROUP_SIZE))
-
-    # (size // (ROOTS_MAX_3//ROOTS_GROUP_SIZE)) + (size % (ROOTS_MAX_3//ROOTS_GROUP_SIZE) != 0) + ROOTS_GROUPS_OFFSET_0
-    if (size <= ROOTS_MAX_0) : return (size >> ROOTS_DIV_0) + ROOTS_GROUPS_OFFSET_0
-    if (size <= ROOTS_MAX_1) : return (size >> ROOTS_DIV_1) + ROOTS_GROUPS_OFFSET_1
-    if (size <= ROOTS_MAX_2) : return (size >> ROOTS_DIV_2) + ROOTS_GROUPS_OFFSET_2
-    if (size <= ROOTS_MAX_3) : return (size >> ROOTS_DIV_3) + ROOTS_GROUPS_OFFSET_3
+    if (size <= (ROOTS_MAX_0 - C_SIZE_MIN)) : size -= C_SIZE_MIN               ; return (size >> ROOTS_DIV_0) + ROOTS_GROUPS_OFFSET_0
+    if (size <= (ROOTS_MAX_1 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_0 ; return (size >> ROOTS_DIV_1) + ROOTS_GROUPS_OFFSET_1
+    if (size <= (ROOTS_MAX_2 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_1 ; return (size >> ROOTS_DIV_2) + ROOTS_GROUPS_OFFSET_2
+    if (size <= (ROOTS_MAX_3 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_2 ; return (size >> ROOTS_DIV_3) + ROOTS_GROUPS_OFFSET_3
+    if (size <= (ROOTS_MAX_4 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_3 ; return (size >> ROOTS_DIV_4) + ROOTS_GROUPS_OFFSET_4
+    if (size <= (ROOTS_MAX_5 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_4 ; return (size >> ROOTS_DIV_5) + ROOTS_GROUPS_OFFSET_5
+    if (size <= (ROOTS_MAX_6 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_5 ; return (size >> ROOTS_DIV_6) + ROOTS_GROUPS_OFFSET_6
+    if (size <= (ROOTS_MAX_7 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_6 ; return (size >> ROOTS_DIV_7) + ROOTS_GROUPS_OFFSET_7
 
     return ROOTS_GROUPS_OFFSET_8 - 1
 
 def get_idx(size):
 
-    size -= C_SIZE_MIN
-
-    if (size <= ROOTS_MAX_0) : size -= 0           ; return (size >> ROOTS_DIV_0) + (not not (size & ROOTS_GROUPS_REMAINING_0)) + ROOTS_GROUPS_OFFSET_0
-    if (size <= ROOTS_MAX_1) : size -= ROOTS_MAX_0 ; return (size >> ROOTS_DIV_1) + (not not (size & ROOTS_GROUPS_REMAINING_1)) + ROOTS_GROUPS_OFFSET_1
-    if (size <= ROOTS_MAX_2) : size -= ROOTS_MAX_1 ; return (size >> ROOTS_DIV_2) + (not not (size & ROOTS_GROUPS_REMAINING_2)) + ROOTS_GROUPS_OFFSET_2
-    if (size <= ROOTS_MAX_3) : size -= ROOTS_MAX_2 ; return (size >> ROOTS_DIV_3) + (not not (size & ROOTS_GROUPS_REMAINING_3)) + ROOTS_GROUPS_OFFSET_3
+    # (size // (ROOTS_MAX_3//ROOTS_GROUP_SIZE)) + (size % (ROOTS_MAX_3//ROOTS_GROUP_SIZE) != 0) + ROOTS_GROUPS_OFFSET_0
+    if (size <= (ROOTS_MAX_0 - C_SIZE_MIN)) : size -= C_SIZE_MIN               ; return (size >> ROOTS_DIV_0) + (not not (size & ROOTS_GROUPS_REMAINING_0)) + ROOTS_GROUPS_OFFSET_0
+    if (size <= (ROOTS_MAX_1 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_0 ; return (size >> ROOTS_DIV_1) + (not not (size & ROOTS_GROUPS_REMAINING_1)) + ROOTS_GROUPS_OFFSET_1
+    if (size <= (ROOTS_MAX_2 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_1 ; return (size >> ROOTS_DIV_2) + (not not (size & ROOTS_GROUPS_REMAINING_2)) + ROOTS_GROUPS_OFFSET_2
+    if (size <= (ROOTS_MAX_3 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_2 ; return (size >> ROOTS_DIV_3) + (not not (size & ROOTS_GROUPS_REMAINING_3)) + ROOTS_GROUPS_OFFSET_3
+    if (size <= (ROOTS_MAX_4 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_3 ; return (size >> ROOTS_DIV_4) + (not not (size & ROOTS_GROUPS_REMAINING_4)) + ROOTS_GROUPS_OFFSET_4
+    if (size <= (ROOTS_MAX_5 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_4 ; return (size >> ROOTS_DIV_5) + (not not (size & ROOTS_GROUPS_REMAINING_5)) + ROOTS_GROUPS_OFFSET_5
+    if (size <= (ROOTS_MAX_6 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_5 ; return (size >> ROOTS_DIV_6) + (not not (size & ROOTS_GROUPS_REMAINING_6)) + ROOTS_GROUPS_OFFSET_6
+    if (size <= (ROOTS_MAX_7 - C_SIZE_MIN)) : size -= C_SIZE_MIN + ROOTS_MAX_6 ; return (size >> ROOTS_DIV_7) + (not not (size & ROOTS_GROUPS_REMAINING_7)) + ROOTS_GROUPS_OFFSET_7
 
     return ROOTS_GROUPS_OFFSET_8 - 1
 
@@ -173,9 +172,3 @@ print(f'''
 #define ROOTS_GROUPS_OFFSET_6 {ROOTS_GROUPS_OFFSET_6}ULL
 #define ROOTS_GROUPS_OFFSET_7 {ROOTS_GROUPS_OFFSET_7}ULL
 ''')
-
-
-print(get_idx(32))
-print(get_idx(32 + 65535))
-print(get_idx(32 + 65536))
-print(get_idx(32 + 65537))
