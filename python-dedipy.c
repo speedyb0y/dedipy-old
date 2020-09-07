@@ -71,31 +71,21 @@ struct BufferInfo {
     u64 total; // TOTAL MEMORY MAPPED
 };
 
-/*
-    TOP u64
-
-    ROOTS_N / N_BITS = TOPS_N
-    65536 / 64 = 1024
-
-    cada bit mapeia um dos 1024 grupos
-
-    TOPS u64[TOPS_N]
-*/
-
-#define TOPS_N 1024
+#define TOPS0_N ((ROOTS_N/64)/64)
+#define TOPS1_N (ROOTS_N/64)
 
 #define BUFF_INFO          ((BufferInfo*)(BUFF))
-#define BUFF_TOP                  ((u64*)(BUFF + sizeof(BufferInfo)))
-#define BUFF_TOPS                ((u64**)(BUFF + sizeof(BufferInfo) + sizeof(u64)))
-#define BUFF_ROOTS           ((chunk_s**)(BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64)))
-#define BUFF_ROOTS_LST       ((chunk_s**)(BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N - 1)))
-#define BUFF_ROOTS_LMT       ((chunk_s**)(BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    )))
-#define BUFF_L           ((chunk_size_t*)(BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    )))
-#define BUFF_CHUNKS                      (BUFF + sizeof(BufferInfo) + sizeof(u64) + TOPS_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    ) + sizeof(chunk_size_t))
+#define BUFF_TOPS_0               ((u64*)(BUFF + sizeof(BufferInfo)))
+#define BUFF_TOPS_1               ((u64*)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64)))
+#define BUFF_ROOTS           ((chunk_s**)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64)))
+#define BUFF_ROOTS_LST       ((chunk_s**)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N - 1)))
+#define BUFF_ROOTS_LMT       ((chunk_s**)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    )))
+#define BUFF_L           ((chunk_size_t*)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    )))
+#define BUFF_CHUNKS                      (BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    ) + sizeof(chunk_size_t))
 #define BUFF_R           ((chunk_size_t*)(BUFF_INFO->lmt - sizeof(chunk_size_t)))
 #define BUFF_LMT                         (BUFF_INFO->lmt)
 
-#define BUFF_CHUNKS_SIZE ((BUFF_INFO->lmt - BUFF) - sizeof(BufferInfo) - sizeof(u64) - TOPS_N*sizeof(u64) - ROOTS_N*sizeof(chunk_s*) - sizeof(chunk_size_t) - sizeof(chunk_size_t))
+#define BUFF_CHUNKS_SIZE ((BUFF_INFO->lmt - BUFF) - sizeof(BufferInfo) - TOPS0_N*sizeof(u64) - TOPS1_N*sizeof(u64) - ROOTS_N*sizeof(chunk_s*) - sizeof(chunk_size_t) - sizeof(chunk_size_t))
 
 #define CHUNK_ALIGNMENT 8ULL
 #define DATA_ALIGNMENT 8ULL
@@ -108,7 +98,7 @@ struct BufferInfo {
 // O TAMANHO DO CHUNK TEM QUE CABER ELE QUANDO ESTIVER LIVRE
 #define c_size_from_data_size(dataSize) (_CHUNK_USED_SIZE(dataSize) > C_SIZE_MIN ? _CHUNK_USED_SIZE(dataSize) : C_SIZE_MIN)
 
-#define C_SIZE  0b111111111111111111111111111111111111111111111111110ULL
+#define C_SIZE  0b111111111111111111111111111111111111111111111111000ULL // NOTE: JÁ ALINHADO
 #define C_FREE  0b000000000000000000000000000000000000000000000000001ULL
 #define C_DUMMY 0b000000000000000000000000000000000000000000000000010ULL // NÃO FREE, E O SUFICIENTE PARA NÃO SER INTERPRETADO COMO NULL
 
@@ -151,15 +141,6 @@ static inline uint root_put_idx (u64 size) {
     return (uint)size;
 }
 
-static inline chunk_s** root_put_ptr (u64 size) {
-
-    uint idx = root_put_idx(size);
-
-    assert(idx < ROOTS_N);
-
-    return BUFF_ROOTS + idx;
-}
-
 static inline uint root_get_idx (u64 size) {
 
     if (size <= (ROOTS_MAX_0 - C_SIZE_MIN)) { size -= C_SIZE_MIN              ; size = (size >> ROOTS_DIV_0) + (!!(size & ROOTS_GROUPS_REMAINING_0)) + ROOTS_GROUPS_OFFSET_0; } else
@@ -175,20 +156,19 @@ static inline uint root_get_idx (u64 size) {
     return (uint)size;
 }
 
-static inline chunk_s** root_get_ptr (u64 size) {
-
-    uint idx = root_get_idx(size);
-
-    assert(idx < ROOTS_N);
-
-    return BUFF_ROOTS + idx;
-}
-
 static inline void c_free_fill_and_register (chunk_s* const c, const u64 s) {
 
     *c_size2(c, s) = c->size = s | C_FREE;
 
-    chunk_s** const ptr = root_put_ptr(s);
+    uint idx = root_put_idx(s);
+
+    assert(idx < ROOTS_N);
+
+    // SABEMOS QUE AGORA TEM PELO MENOS UM NESTES GRUPOS
+    BUFF_TOPS_0[idx >> 12] |= 1ULL << ((idx >> 6) & 0b111111U);
+    BUFF_TOPS_1[idx >>  6] |= 1ULL << (idx        & 0b111111U);
+
+    chunk_s** const ptr = BUFF_ROOTS + idx;
 
     c->ptr = ptr;
     c->next = *ptr;
@@ -201,10 +181,15 @@ static inline void c_free_fill_and_register (chunk_s* const c, const u64 s) {
 
 static inline void c_free_unregister (chunk_s* const c) {
 
-    if (c->next)
+    if (c->next) {
         c->next->ptr = c->ptr;
-
-    *c->ptr = c->next;
+        *c->ptr = c->next;
+    } else { *c->ptr = NULL;
+        const u64 idx = c->ptr - BUFF_ROOTS;
+        if (idx < ROOTS_N)
+            if(!(BUFF_TOPS_1[idx >>  6] ^= 1ULL << (idx & 0b111111U)))
+                 BUFF_TOPS_0[idx >> 12] ^= 1ULL << ((idx>>6) & 0b111111U);
+    }
 }
 
 void dedipy_free (void* const d) {
@@ -235,20 +220,63 @@ void* dedipy_malloc (size_t size_) {
 
     u64 size = c_size_from_data_size(size_);
 
-    if (size > C_SIZE_MAX)
-        return NULL;
-
-    chunk_s** ptr = root_get_ptr(size);
-
     chunk_s* used;
 
-    while ((used = *ptr) == NULL)
-        ptr++;
+    // O INDEX, A PARTIR DO QUAL, TODOS OS CHUNKS GARANTEM ESTE SIZE
+    uint idx = root_get_idx(size);
 
-    if (used == (chunk_s*)C_DUMMY)
-        return NULL;
+    assert(idx < ROOTS_N);
+
+    uint tid; u64 found;
+
+    // TENTA O BIT DIRETO NO GRUPO 1
+    // NÃO LÊ O QUE FOR MENOR DO QUE O REMAINDER
+    found = BUFF_TOPS_1[idx >> 6] & (0xFFFFFFFFFFFFFFFFULL << (idx & 0b111111U));
+
+    if (found) {
+        found = __builtin_ctzll(found);
+        found |= idx & ~0b111111U; // ESQUECE O REMAINDER QUE PEDIU, E USAR O MAIOR QUE CONSEGUIU
+        goto FOUND;
+    }
+
+    // TENTA O MAIOR BIT NO GRUPO 0
+    // MAS A PALAVRA ANTERIOR, JÁ FOI VISTA, ENTÃO PÕE +1 ALI :O
+    tid = idx >> 12;
+
+    found = BUFF_TOPS_0[tid] & (0xFFFFFFFFFFFFFFFFULL << (((idx >> 6) + 1) & 0b111111U));
+
+    if (found) {
+        tid  = (tid << 6) | __builtin_ctzll(found);
+        found = (tid << 6) | __builtin_ctzll(BUFF_TOPS_1[tid]);
+        if (found >= idx)
+            goto FOUND;
+    }
+
+    // DAQUI PARA A FRENTE QUALQUER UM SERVE
+    tid = idx >> 12;
+
+    // SÓ PRECISA ANALISAR O NÍVEL MAIS ALTO, PARA DEPOIS ENTRAR NELE
+    // ACHA O PRIMEIRO TOP0
+    do {
+        if (++tid == 16)
+            return NULL;
+    } while (!(found = BUFF_TOPS_0[tid]));
+
+    // AGORA VAI DESCENDO
+    tid   = (tid << 6) | __builtin_ctzll(found);
+    found = (tid << 6) | __builtin_ctzll(BUFF_TOPS_1[tid]);
+
+FOUND:
+
+    assert(found < ROOTS_N);
+
+    used = *(BUFF_ROOTS + found);
+
+    assert(used);
 
     u64 usedSize = used->size & C_SIZE;
+
+    assert(usedSize >= size_);
 
     const u64 freeSizeNew = usedSize - size;
 
@@ -608,17 +636,11 @@ void dedipy_main (void) {
     // ROOTS_SIZES_LST
     // ROOTS_SIZES_LMT
 
-    //assert(C_SIZE_MIN == ROOTS_SIZES_FST);
-    //assert(C_SIZE_MAX <  ROOTS_SIZES_LMT);
+    assert(root_get_idx(C_SIZE_MIN) == 0);
+    assert(root_get_idx(C_SIZE_MAX) == (ROOTS_N - 1));
 
-    //assert(ROOTS_SIZES_FST < ROOTS_SIZES_LST);
-    //assert(ROOTS_SIZES_LST < ROOTS_SIZES_LMT);
-
-    assert(root_get_ptr(C_SIZE_MIN) == (BUFF_ROOTS));
-    assert(root_get_ptr(C_SIZE_MAX) == (BUFF_ROOTS + (ROOTS_N - 1)));
-
-    assert(root_put_ptr(C_SIZE_MIN) == (BUFF_ROOTS));
-    assert(root_put_ptr(C_SIZE_MAX) <= (BUFF_ROOTS + (ROOTS_N - 1))); // COMO VAI ARREDONDAR PARA BAIXO, PEDIR O MÁXIMO PODE CAIR LOGO ANTES DO ÚLTIMO SLOT
+    assert(root_put_idx(C_SIZE_MIN) == 0);
+    assert(root_put_idx(C_SIZE_MAX) <= (ROOTS_N - 1)); // COMO VAI ARREDONDAR PARA BAIXO, PEDIR O MÁXIMO PODE CAIR LOGO ANTES DO ÚLTIMO SLOT
 
     assert(BUFF_ROOTS_LMT == (BUFF_ROOTS + ROOTS_N));
 
