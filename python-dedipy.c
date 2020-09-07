@@ -50,43 +50,6 @@
 
 #include "python-dedipy-gen.h"
 
-#define BOFFSET(x) ((x) ?  ((uintll)((const void*)(x) - (const void*)BUFF)) : 0ULL)
-
-typedef struct BufferInfo BufferInfo;
-
-struct BufferInfo {
-    void* lmt;
-    u64 size;
-    u16 cpu;
-    u16 id;
-    u16 n; // quantos processos tem
-    u16 groupID;
-    u16 groupN;
-    u16 reserved;
-    u32 reserved2;
-    u64 code;
-    u64 pid;
-    u64 started;
-    u64 start;
-    u64 total; // TOTAL MEMORY MAPPED
-};
-
-#define TOPS0_N ((ROOTS_N/64)/64)
-#define TOPS1_N (ROOTS_N/64)
-
-#define BUFF_INFO          ((BufferInfo*)(BUFF))
-#define BUFF_TOPS_0               ((u64*)(BUFF + sizeof(BufferInfo)))
-#define BUFF_TOPS_1               ((u64*)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64)))
-#define BUFF_ROOTS           ((chunk_s**)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64)))
-#define BUFF_ROOTS_LST       ((chunk_s**)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N - 1)))
-#define BUFF_ROOTS_LMT       ((chunk_s**)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    )))
-#define BUFF_L           ((chunk_size_t*)(BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    )))
-#define BUFF_CHUNKS                      (BUFF + sizeof(BufferInfo) + TOPS0_N*sizeof(u64) + TOPS1_N*sizeof(u64) + sizeof(chunk_s*)*(ROOTS_N    ) + sizeof(chunk_size_t))
-#define BUFF_R           ((chunk_size_t*)(BUFF_INFO->lmt - sizeof(chunk_size_t)))
-#define BUFF_LMT                         (BUFF_INFO->lmt)
-
-#define BUFF_CHUNKS_SIZE ((BUFF_INFO->lmt - BUFF) - sizeof(BufferInfo) - TOPS0_N*sizeof(u64) - TOPS1_N*sizeof(u64) - ROOTS_N*sizeof(chunk_s*) - sizeof(chunk_size_t) - sizeof(chunk_size_t))
-
 #define CHUNK_ALIGNMENT 8ULL
 #define DATA_ALIGNMENT 8ULL
 
@@ -111,6 +74,47 @@ struct chunk_s {
     chunk_s** ptr;
     chunk_s* next;
 };
+
+#define BOFFSET(x) ((x) ?  ((uintll)((const void*)(x) - (const void*)BUFF)) : 0ULL)
+
+typedef struct BufferInfo BufferInfo;
+
+#define TOPS0_N ((ROOTS_N/64)/64)
+#define TOPS1_N (ROOTS_N/64)
+
+struct BufferInfo {
+    void* lmt;
+    u64 size;
+    u16 cpu;
+    u16 id;
+    u16 n; // quantos processos tem
+    u16 groupID;
+    u16 groupN;
+    u16 reserved;
+    u32 reserved2;
+    u64 code;
+    u64 pid;
+    u64 started;
+    u64 start;
+    u64 total; // TOTAL MEMORY MAPPED
+    u64 tops0[TOPS0_N];
+    u64 tops1[TOPS1_N];
+    chunk_s* roots[ROOTS_N];
+    chunk_size_t l;
+    chunk_s chunks[];
+};
+
+#define BUFF_INFO     ((BufferInfo*)(BUFF))
+#define BUFF_TOPS_0                 (BUFF_INFO->tops0)
+#define BUFF_TOPS_1                 (BUFF_INFO->tops1)
+#define BUFF_ROOTS                  (BUFF_INFO->roots)
+#define BUFF_ROOTS_LMT             (&BUFF_INFO->roots[ROOTS_N])
+#define BUFF_L                     (&BUFF_INFO->l)
+#define BUFF_CHUNKS                 (BUFF_INFO->chunks)
+#define BUFF_R      ((chunk_size_t*)(BUFF_INFO->lmt - sizeof(chunk_size_t)))
+#define BUFF_LMT                    (BUFF_INFO->lmt)
+
+#define BUFF_CHUNKS_SIZE ((BUFF_INFO->lmt - BUFF) - sizeof(BufferInfo) - sizeof(chunk_size_t))
 
 #define c_data(c) ((void*)(c) + sizeof(chunk_size_t))
 #define c_data_size(s) ((u64)(s) - 2*sizeof(chunk_size_t)) // DADO UM CHUNK USED DE TAL TAMANHO, CALCULA O TAMANHO DOS DADOS
@@ -225,46 +229,31 @@ void* dedipy_malloc (size_t size_) {
     // O INDEX, A PARTIR DO QUAL, TODOS OS CHUNKS GARANTEM ESTE SIZE
     uint idx = root_get_idx(size);
 
-    assert(idx < ROOTS_N);
-
     uint tid; u64 found;
 
-    // TENTA O BIT DIRETO NO GRUPO 1
-    // NÃO LÊ O QUE FOR MENOR DO QUE O REMAINDER
-    found = BUFF_TOPS_1[idx >> 6] & (0xFFFFFFFFFFFFFFFFULL << (idx & 0b111111U));
-
-    if (found) {
-        found = __builtin_ctzll(found);
-        found |= idx & ~0b111111U; // ESQUECE O REMAINDER QUE PEDIU, E USAR O MAIOR QUE CONSEGUIU
+    if ((found = BUFF_TOPS_1[idx >> 6] & (0xFFFFFFFFFFFFFFFFULL << (idx & 0b111111U)))) {
+        found = __builtin_ctzll(found) | (idx & ~0b111111U);
         goto FOUND;
     }
 
-    // TENTA O MAIOR BIT NO GRUPO 0
-    // MAS A PALAVRA ANTERIOR, JÁ FOI VISTA, ENTÃO PÕE +1 ALI :O
     tid = idx >> 12;
 
-    found = BUFF_TOPS_0[tid] & (0xFFFFFFFFFFFFFFFFULL << (((idx >> 6) + 1) & 0b111111U));
-
-    if (found) {
+    if ((found = BUFF_TOPS_0[tid] & (0xFFFFFFFFFFFFFFFFULL << (((idx >> 6) + 1) & 0b111111U)))) {
         tid  = (tid << 6) | __builtin_ctzll(found);
         found = (tid << 6) | __builtin_ctzll(BUFF_TOPS_1[tid]);
         if (found >= idx)
             goto FOUND;
     }
 
-    // DAQUI PARA A FRENTE QUALQUER UM SERVE
-    tid = idx >> 12;
+    idx >>= 12;
 
-    // SÓ PRECISA ANALISAR O NÍVEL MAIS ALTO, PARA DEPOIS ENTRAR NELE
-    // ACHA O PRIMEIRO TOP0
-    do {
-        if (++tid == 16)
-            return NULL;
-    } while (!(found = BUFF_TOPS_0[tid]));
+    while (!(found = BUFF_TOPS_0[++idx]));
 
-    // AGORA VAI DESCENDO
-    tid   = (tid << 6) | __builtin_ctzll(found);
-    found = (tid << 6) | __builtin_ctzll(BUFF_TOPS_1[tid]);
+    if (idx >= 16)
+        return NULL;
+
+    idx   = (idx << 6) | __builtin_ctzll(found);
+    found = (idx << 6) | __builtin_ctzll(BUFF_TOPS_1[idx]);
 
 FOUND:
 
