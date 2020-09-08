@@ -68,8 +68,8 @@ struct Worker {
     u16 reserved;
     u16 code; // NAO PRECISA SER PALAVRA GRANDE; É SÓ PARA TORNAR MAIS ÚNICO, JUNTO COM O PID E LAUNCHED
     u64 pid;
-    u32 again; // WHEN TO LAUNCH IT AGAIN, IN SECONDS
-    u32 sizeWeight;
+    u64 again; // WHEN TO LAUNCH IT AGAIN, IN MONOTONIC TIME
+    u64 sizeWeight;
     u64 started; // TIME IT WAS LAUNCHED: IN RDTSC()
     u64 start;
     u64 size;
@@ -175,7 +175,7 @@ static void launch_worker (const Worker* const worker) {
     char env0[512];
 
     snprintf(env0, sizeof(env0), "DEDIPY=" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX"  "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX",
-        (uintll)worker->cpu, (uintll)pid, (uintll)BUFFER_FD, (uintll)BUFFER_MMAP_FLAGS, (uintll)BUFF_ADDR, (uintll)BUFF_SIZE, (uintll)worker->start, (uintll)worker->size, (uintll)worker->code, (uintll)worker->started, (uintll)worker->id, (uintll)WORKERS_N, (uintll)worker->groupID, (uintll)worker->groupN);
+        (uintll)worker->cpu, (uintll)pid, (uintll)BUFF_FD, (uintll)BUFFER_MMAP_FLAGS, (uintll)BUFF_ADDR, (uintll)BUFF_SIZE, (uintll)worker->start, (uintll)worker->size, (uintll)worker->code, (uintll)worker->started, (uintll)worker->id, (uintll)WORKERS_N, (uintll)worker->groupID, (uintll)worker->groupN);
 
     dbg("EXECUTING WORKER %u/%u ON CPU %u START %llu SIZE %llu PID %llu", (uint)worker->id, (uint)WORKERS_N, (uint)worker->cpu, (uintll)worker->start, (uintll)worker->size, (uintll)pid);
 
@@ -187,14 +187,14 @@ static void launch_worker (const Worker* const worker) {
 }
 
 // TODO: FIXME: TER CERTEZA DE QUE É BOOT TIME, PARA QUE JAMAIS TENHA OVERFLOW
-static inline uint getseconds (void) {
+static inline u64 getseconds (void) {
 
     struct timespec t = { .tv_sec = 0, .tv_nsec = 0 };
 
     if (clock_gettime(CLOCK_MONOTONIC, &t))
         fatal("FAILED TO GET MONOTONIC TIME");
 
-    return t.tv_sec;
+    return (u64)t.tv_sec;
 }
 
 // LAUNCH ALL PROCESSES STOPPED
@@ -210,11 +210,11 @@ static void launch_workers (void) {
             if (worker->again <= now) {
                 worker->again = now + 30;
                 worker->started = rdtsc();
-                worker->code = workersCounter++;
+                worker->code = (u16)workersCounter++;
                 const pid_t pid = fork();
                 if (pid == 0)
                     launch_worker(worker);
-                worker->pid = pid;
+                worker->pid = (u64)pid;
             }
         }
     } while (++worker != WORKERS_LMT);
@@ -276,7 +276,7 @@ static void init_workers (void) {
     u64 cpus = 1ULL << DAEMON_CPU;
 
     do {
-        worker->id = workerID++;
+        worker->id = (u8)workerID++;
         worker->pid = 0;
         worker->code = 0;
         worker->again = 0;
@@ -349,25 +349,25 @@ static void init_buffer (void) {
 
     if (fd == -1)
         fatal("FAILED TO OPEN BUFFER");
-    if (dup2(fd, BUFFER_FD) != BUFFER_FD)
+    if (dup2(fd, BUFF_FD) != BUFF_FD)
         fatal("");
     if (close(fd))
         fatal("");
 
 #if 0
-    if (ftruncate(BUFFER_FD, BUFF_SIZE))
+    if (ftruncate(BUFF_FD, BUFF_SIZE))
         fatal("FTRUNCATE FAILED");
 #endif
 
     // TODO: FIXME: TER CERTEZA QUE CARREGOU TOOS OS HOLES :S
     //  | MAP_HUGETLB | MAP_HUGE_1GB
-    if (mmap(BUFF_ADDR, BUFF_SIZE, PROT_READ | PROT_WRITE, BUFFER_MMAP_FLAGS, BUFFER_FD, 0) != BUFF_ADDR)
+    if (mmap(BUFF_ADDR, BUFF_SIZE, PROT_READ | PROT_WRITE, BUFFER_MMAP_FLAGS, BUFF_FD, 0) != BUFF_ADDR)
         fatal("FAILED TO MAP BUFFER");
 
     // ter certeza de que tem este tamanho
     // AO MESMO TEMPO, PREVINE QUE WRITE() NESTE FD ESCREVE SOBRE A MEMÓRIA
     // TODO: FIXME: isso adianta, ou precisa testar um write()? :/
-    if (lseek(BUFFER_FD, BUFF_SIZE, SEEK_SET) != BUFF_SIZE)
+    if (lseek(BUFF_FD, BUFF_SIZE, SEEK_SET) != BUFF_SIZE)
         fatal("FAILED TO SEEK BUFFER FD");
 }
 
@@ -452,7 +452,7 @@ static void handle_sig_child (void) {
             Worker* worker = workers;
 
             do {
-                if (worker->pid == pid) {
+                if (worker->pid == (u64)pid) {
                     worker->pid = 0;
                     dbg("WORKER %u WITH PID %llu DIED", worker->id, (uintll)pid);
                 }
@@ -499,14 +499,13 @@ static void main_loop (void) {
 }
 
 // RETORNA: SE TEM QUE DAR WAIT
-static inline int main_wait_workers (void) {
+static int main_wait_workers (void) {
 
     loop {
         const pid_t pid = wait(NULL);
 
         if (pid == -1)
             return errno != ECHILD;
-
         // TODO: FIXME: identifica qual foi e limpa ele
     }
 }
@@ -554,7 +553,7 @@ int main (void) {
     main_loop();
 
     // PARA SABER QUE NINGUEM MECHEU NO FD
-    if (lseek(BUFFER_FD, 0, SEEK_CUR) != BUFF_SIZE)
+    if (lseek(BUFF_FD, 0, SEEK_CUR) != BUFF_SIZE)
         fatal_group("BUFFER FD OFFSET WAS CHANGED");
 
     // TODO: FIXME: wait() non blocking, e limpa todos
@@ -574,7 +573,7 @@ int main (void) {
             do {
                 if (worker->pid) {
                     dbg("KILLING WORKER %u WITH PID %llu", worker->id, (uintll)worker->pid);
-                    kill(worker->pid, SIGKILL);
+                    kill((pid_t)worker->pid, SIGKILL);
                 }
             } while (++worker != WORKERS_LMT);
             // TODO: FIXME: THIS ONE MUST BE NON BLOCKING
