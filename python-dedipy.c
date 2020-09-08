@@ -128,42 +128,28 @@ struct BufferInfo {
 
 static void* BUFF;
 
-static inline uint root_put_idx (u64 size) {
-
-    if (size <= ROOTS_MAX_0) {                      size = (size >> ROOTS_DIV_0) + ROOTS_GROUPS_OFFSET_0; } else
-    if (size <= ROOTS_MAX_1) { size -= ROOTS_MAX_0; size = (size >> ROOTS_DIV_1) + ROOTS_GROUPS_OFFSET_1; } else
-    if (size <= ROOTS_MAX_2) { size -= ROOTS_MAX_1; size = (size >> ROOTS_DIV_2) + ROOTS_GROUPS_OFFSET_2; } else
-    if (size <= ROOTS_MAX_3) { size -= ROOTS_MAX_2; size = (size >> ROOTS_DIV_3) + ROOTS_GROUPS_OFFSET_3; } else
-    if (size <= ROOTS_MAX_4) { size -= ROOTS_MAX_3; size = (size >> ROOTS_DIV_4) + ROOTS_GROUPS_OFFSET_4; } else
-    if (size <= ROOTS_MAX_5) { size -= ROOTS_MAX_4; size = (size >> ROOTS_DIV_5) + ROOTS_GROUPS_OFFSET_5; } else
-    if (size <= ROOTS_MAX_6) { size -= ROOTS_MAX_5; size = (size >> ROOTS_DIV_6) + ROOTS_GROUPS_OFFSET_6; } else
-    if (size <= ROOTS_MAX_7) { size -= ROOTS_MAX_6; size = (size >> ROOTS_DIV_7) + ROOTS_GROUPS_OFFSET_7; } else
-        size = ROOTS_N - 1;
-
-    return (uint)size;
-}
-
-static inline void c_free_fill_and_register (chunk_s* const c, const u64 s) {
+static inline void c_free_fill_and_register (chunk_s* const c, u64 s) {
 
     *c_size2(c, s) = c->size = s | C_FREE;
 
-    uint idx = root_put_idx(s);
+    if (s <= ROOTS_MAX_0) {                   s = (s >> ROOTS_DIV_0) + ROOTS_GROUPS_OFFSET_0; } else
+    if (s <= ROOTS_MAX_1) { s -= ROOTS_MAX_0; s = (s >> ROOTS_DIV_1) + ROOTS_GROUPS_OFFSET_1; } else
+    if (s <= ROOTS_MAX_2) { s -= ROOTS_MAX_1; s = (s >> ROOTS_DIV_2) + ROOTS_GROUPS_OFFSET_2; } else
+    if (s <= ROOTS_MAX_3) { s -= ROOTS_MAX_2; s = (s >> ROOTS_DIV_3) + ROOTS_GROUPS_OFFSET_3; } else
+    if (s <= ROOTS_MAX_4) { s -= ROOTS_MAX_3; s = (s >> ROOTS_DIV_4) + ROOTS_GROUPS_OFFSET_4; } else
+    if (s <= ROOTS_MAX_5) { s -= ROOTS_MAX_4; s = (s >> ROOTS_DIV_5) + ROOTS_GROUPS_OFFSET_5; } else
+    if (s <= ROOTS_MAX_6) { s -= ROOTS_MAX_5; s = (s >> ROOTS_DIV_6) + ROOTS_GROUPS_OFFSET_6; } else
+    if (s <= ROOTS_MAX_7) { s -= ROOTS_MAX_6; s = (s >> ROOTS_DIV_7) + ROOTS_GROUPS_OFFSET_7; } else
+        s = ROOTS_N - 1;
 
-    assert(idx < ROOTS_N);
+    if ((c->next = *(c->ptr = BUFF_ROOTS + s)))
+        (*c->ptr)->ptr = &c->next;
+    else { // SABEMOS QUE AGORA TEM PELO MENOS UM NESTES GRUPOS
+        BUFF_TOPS_1[s >>  6] |= 1ULL << (s        & 0b111111U);
+        BUFF_TOPS_0[s >> 12] |= 1ULL << ((s >> 6) & 0b111111U);
+    }
 
-    // SABEMOS QUE AGORA TEM PELO MENOS UM NESTES GRUPOS
-    BUFF_TOPS_0[idx >> 12] |= 1ULL << ((idx >> 6) & 0b111111U);
-    BUFF_TOPS_1[idx >>  6] |= 1ULL << (idx        & 0b111111U);
-
-    chunk_s** const ptr = BUFF_ROOTS + idx;
-
-    c->ptr = ptr;
-    c->next = *ptr;
-
-    if (*ptr)
-        (*ptr)->ptr = &c->next;
-
-    *ptr = c;
+    *c->ptr = c;
 }
 
 static inline void c_free_unregister (chunk_s* const c) {
