@@ -65,22 +65,32 @@
 #define C_FREE  0b000000000000000000000000000000000000000000000000001ULL
 #define C_DUMMY 0b000000000000000000000000000000000000000000000000010ULL // NÃO FREE, E O SUFICIENTE PARA NÃO SER INTERPRETADO COMO NULL
 
-typedef u64 chunk_size_t;
+#define TOPS0_N ((ROOTS_N/64)/64)
+#define TOPS1_N (ROOTS_N/64)
 
+#define BOFFSET(x) ((x) ?  ((uintll)((const void*)(x) - (const void*)BUFF)) : 0ULL)
+
+#define BUFF_INFO     ((BufferInfo*)(BUFF))
+#define BUFF_TOPS_0                 (BUFF_INFO->tops0)
+#define BUFF_TOPS_1                 (BUFF_INFO->tops1)
+#define BUFF_ROOTS                  (BUFF_INFO->roots)
+#define BUFF_ROOTS_LMT             (&BUFF_INFO->roots[ROOTS_N])
+#define BUFF_L                     (&BUFF_INFO->l)
+#define BUFF_CHUNKS                 (BUFF_INFO->chunks)
+#define BUFF_R      ((chunk_size_t*)(BUFF_INFO->lmt - sizeof(chunk_size_t)))
+#define BUFF_LMT                    (BUFF_INFO->lmt)
+
+#define BUFF_CHUNKS_SIZE ((BUFF_INFO->lmt - BUFF) - sizeof(BufferInfo) - sizeof(chunk_size_t))
+
+typedef u64 chunk_size_t;
 typedef struct chunk_s chunk_s;
+typedef struct BufferInfo BufferInfo;
 
 struct chunk_s {
     chunk_size_t size;
     chunk_s** ptr;
     chunk_s* next;
 };
-
-#define BOFFSET(x) ((x) ?  ((uintll)((const void*)(x) - (const void*)BUFF)) : 0ULL)
-
-typedef struct BufferInfo BufferInfo;
-
-#define TOPS0_N ((ROOTS_N/64)/64)
-#define TOPS1_N (ROOTS_N/64)
 
 struct BufferInfo {
     void* lmt;
@@ -104,18 +114,6 @@ struct BufferInfo {
     chunk_s chunks[];
 };
 
-#define BUFF_INFO     ((BufferInfo*)(BUFF))
-#define BUFF_TOPS_0                 (BUFF_INFO->tops0)
-#define BUFF_TOPS_1                 (BUFF_INFO->tops1)
-#define BUFF_ROOTS                  (BUFF_INFO->roots)
-#define BUFF_ROOTS_LMT             (&BUFF_INFO->roots[ROOTS_N])
-#define BUFF_L                     (&BUFF_INFO->l)
-#define BUFF_CHUNKS                 (BUFF_INFO->chunks)
-#define BUFF_R      ((chunk_size_t*)(BUFF_INFO->lmt - sizeof(chunk_size_t)))
-#define BUFF_LMT                    (BUFF_INFO->lmt)
-
-#define BUFF_CHUNKS_SIZE ((BUFF_INFO->lmt - BUFF) - sizeof(BufferInfo) - sizeof(chunk_size_t))
-
 #define c_data(c) ((void*)(c) + sizeof(chunk_size_t))
 #define c_data_size(s) ((u64)(s) - 2*sizeof(chunk_size_t)) // DADO UM CHUNK USED DE TAL TAMANHO, CALCULA O TAMANHO DOS DADOS
 #define c_size2(c, s) ((chunk_size_t*)((void*)(c) + (u64)(s) - sizeof(chunk_size_t)))
@@ -132,29 +130,14 @@ static void* BUFF;
 
 static inline uint root_put_idx (u64 size) {
 
-    if (size <= (ROOTS_MAX_0 - C_SIZE_MIN)) { size -= C_SIZE_MIN              ; size = (size >> ROOTS_DIV_0) + ROOTS_GROUPS_OFFSET_0; } else
-    if (size <= (ROOTS_MAX_1 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_0; size = (size >> ROOTS_DIV_1) + ROOTS_GROUPS_OFFSET_1; } else
-    if (size <= (ROOTS_MAX_2 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_1; size = (size >> ROOTS_DIV_2) + ROOTS_GROUPS_OFFSET_2; } else
-    if (size <= (ROOTS_MAX_3 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_2; size = (size >> ROOTS_DIV_3) + ROOTS_GROUPS_OFFSET_3; } else
-    if (size <= (ROOTS_MAX_4 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_3; size = (size >> ROOTS_DIV_4) + ROOTS_GROUPS_OFFSET_4; } else
-    if (size <= (ROOTS_MAX_5 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_4; size = (size >> ROOTS_DIV_5) + ROOTS_GROUPS_OFFSET_5; } else
-    if (size <= (ROOTS_MAX_6 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_5; size = (size >> ROOTS_DIV_6) + ROOTS_GROUPS_OFFSET_6; } else
-    if (size <= (ROOTS_MAX_7 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_6; size = (size >> ROOTS_DIV_7) + ROOTS_GROUPS_OFFSET_7; } else
-        size = ROOTS_N - 1;
-
-    return (uint)size;
-}
-
-static inline uint root_get_idx (u64 size) {
-
-    if (size <= (ROOTS_MAX_0 - C_SIZE_MIN)) { size -= C_SIZE_MIN              ; size = (size >> ROOTS_DIV_0) + (!!(size & ROOTS_GROUPS_REMAINING_0)) + ROOTS_GROUPS_OFFSET_0; } else
-    if (size <= (ROOTS_MAX_1 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_0; size = (size >> ROOTS_DIV_1) + (!!(size & ROOTS_GROUPS_REMAINING_1)) + ROOTS_GROUPS_OFFSET_1; } else
-    if (size <= (ROOTS_MAX_2 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_1; size = (size >> ROOTS_DIV_2) + (!!(size & ROOTS_GROUPS_REMAINING_2)) + ROOTS_GROUPS_OFFSET_2; } else
-    if (size <= (ROOTS_MAX_3 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_2; size = (size >> ROOTS_DIV_3) + (!!(size & ROOTS_GROUPS_REMAINING_3)) + ROOTS_GROUPS_OFFSET_3; } else
-    if (size <= (ROOTS_MAX_4 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_3; size = (size >> ROOTS_DIV_4) + (!!(size & ROOTS_GROUPS_REMAINING_4)) + ROOTS_GROUPS_OFFSET_4; } else
-    if (size <= (ROOTS_MAX_5 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_4; size = (size >> ROOTS_DIV_5) + (!!(size & ROOTS_GROUPS_REMAINING_5)) + ROOTS_GROUPS_OFFSET_5; } else
-    if (size <= (ROOTS_MAX_6 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_5; size = (size >> ROOTS_DIV_6) + (!!(size & ROOTS_GROUPS_REMAINING_6)) + ROOTS_GROUPS_OFFSET_6; } else
-    if (size <= (ROOTS_MAX_7 - C_SIZE_MIN)) { size -= C_SIZE_MIN + ROOTS_MAX_6; size = (size >> ROOTS_DIV_7) + (!!(size & ROOTS_GROUPS_REMAINING_7)) + ROOTS_GROUPS_OFFSET_7; } else
+    if (size <= ROOTS_MAX_0) {                      size = (size >> ROOTS_DIV_0) + ROOTS_GROUPS_OFFSET_0; } else
+    if (size <= ROOTS_MAX_1) { size -= ROOTS_MAX_0; size = (size >> ROOTS_DIV_1) + ROOTS_GROUPS_OFFSET_1; } else
+    if (size <= ROOTS_MAX_2) { size -= ROOTS_MAX_1; size = (size >> ROOTS_DIV_2) + ROOTS_GROUPS_OFFSET_2; } else
+    if (size <= ROOTS_MAX_3) { size -= ROOTS_MAX_2; size = (size >> ROOTS_DIV_3) + ROOTS_GROUPS_OFFSET_3; } else
+    if (size <= ROOTS_MAX_4) { size -= ROOTS_MAX_3; size = (size >> ROOTS_DIV_4) + ROOTS_GROUPS_OFFSET_4; } else
+    if (size <= ROOTS_MAX_5) { size -= ROOTS_MAX_4; size = (size >> ROOTS_DIV_5) + ROOTS_GROUPS_OFFSET_5; } else
+    if (size <= ROOTS_MAX_6) { size -= ROOTS_MAX_5; size = (size >> ROOTS_DIV_6) + ROOTS_GROUPS_OFFSET_6; } else
+    if (size <= ROOTS_MAX_7) { size -= ROOTS_MAX_6; size = (size >> ROOTS_DIV_7) + ROOTS_GROUPS_OFFSET_7; } else
         size = ROOTS_N - 1;
 
     return (uint)size;
@@ -224,12 +207,20 @@ void* dedipy_malloc (size_t size_) {
 
     u64 size = c_size_from_data_size(size_);
 
-    chunk_s* used;
+    chunk_s* used; u64 tid; u64 found; u64 idx;
 
     // O INDEX, A PARTIR DO QUAL, TODOS OS CHUNKS GARANTEM ESTE SIZE
-    uint idx = root_get_idx(size);
+    idx = size;
 
-    uint tid; u64 found;
+    if (idx <= ROOTS_MAX_0) {                     idx = (idx >> ROOTS_DIV_0) + (!!(idx & ROOTS_GROUPS_REMAINING_0)) + ROOTS_GROUPS_OFFSET_0; } else
+    if (idx <= ROOTS_MAX_1) { idx -= ROOTS_MAX_0; idx = (idx >> ROOTS_DIV_1) + (!!(idx & ROOTS_GROUPS_REMAINING_1)) + ROOTS_GROUPS_OFFSET_1; } else
+    if (idx <= ROOTS_MAX_2) { idx -= ROOTS_MAX_1; idx = (idx >> ROOTS_DIV_2) + (!!(idx & ROOTS_GROUPS_REMAINING_2)) + ROOTS_GROUPS_OFFSET_2; } else
+    if (idx <= ROOTS_MAX_3) { idx -= ROOTS_MAX_2; idx = (idx >> ROOTS_DIV_3) + (!!(idx & ROOTS_GROUPS_REMAINING_3)) + ROOTS_GROUPS_OFFSET_3; } else
+    if (idx <= ROOTS_MAX_4) { idx -= ROOTS_MAX_3; idx = (idx >> ROOTS_DIV_4) + (!!(idx & ROOTS_GROUPS_REMAINING_4)) + ROOTS_GROUPS_OFFSET_4; } else
+    if (idx <= ROOTS_MAX_5) { idx -= ROOTS_MAX_4; idx = (idx >> ROOTS_DIV_5) + (!!(idx & ROOTS_GROUPS_REMAINING_5)) + ROOTS_GROUPS_OFFSET_5; } else
+    if (idx <= ROOTS_MAX_6) { idx -= ROOTS_MAX_5; idx = (idx >> ROOTS_DIV_6) + (!!(idx & ROOTS_GROUPS_REMAINING_6)) + ROOTS_GROUPS_OFFSET_6; } else
+    if (idx <= ROOTS_MAX_7) { idx -= ROOTS_MAX_6; idx = (idx >> ROOTS_DIV_7) + (!!(idx & ROOTS_GROUPS_REMAINING_7)) + ROOTS_GROUPS_OFFSET_7; } else
+        idx = ROOTS_N - 1;
 
     if ((found = BUFF_TOPS_1[idx >> 6] & (0xFFFFFFFFFFFFFFFFULL << (idx & 0b111111U)))) {
         found = __builtin_ctzll(found) | (idx & ~0b111111U);
@@ -247,10 +238,10 @@ void* dedipy_malloc (size_t size_) {
 
     idx >>= 12;
 
-    while (!(found = BUFF_TOPS_0[++idx]));
-
-    if (idx >= 16)
-        return NULL;
+    do {
+        if (++idx == TOPS0_N)
+            return NULL;
+    } while (!(found = BUFF_TOPS_0[idx]));
 
     idx   = (idx << 6) | __builtin_ctzll(found);
     found = (idx << 6) | __builtin_ctzll(BUFF_TOPS_1[idx]);
@@ -624,12 +615,6 @@ void dedipy_main (void) {
     // C_SIZE_MAX
     // ROOTS_SIZES_LST
     // ROOTS_SIZES_LMT
-
-    assert(root_get_idx(C_SIZE_MIN) == 0);
-    assert(root_get_idx(C_SIZE_MAX) == (ROOTS_N - 1));
-
-    assert(root_put_idx(C_SIZE_MIN) == 0);
-    assert(root_put_idx(C_SIZE_MAX) <= (ROOTS_N - 1)); // COMO VAI ARREDONDAR PARA BAIXO, PEDIR O MÁXIMO PODE CAIR LOGO ANTES DO ÚLTIMO SLOT
 
     assert(BUFF_ROOTS_LMT == (BUFF_ROOTS + ROOTS_N));
 
