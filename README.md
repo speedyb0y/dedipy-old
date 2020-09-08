@@ -24,6 +24,8 @@ wget https://python/url
 
 unzip Python-3.8.5.tar.xz
 
+cd Python-3.8.5
+
 cp -v -- ${HOME}/DediPy/{python-dedipy*,util.h,dedipy.h} . 
 
 patch -p1 < ${HOME}/DediPy/python.patch
