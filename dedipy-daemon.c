@@ -24,28 +24,18 @@
 #include <sched.h>
 #include <errno.h>
 
-#include "util.c"
+#include "util.h"
 
-#include "dedipy.c"
+#define DEDIPY_MASTER 1
 
-#ifndef DEDIPY_PYTHON_PATH
-#define DEDIPY_PYTHON_PATH "/usr/bin/python"
-#endif
-
-#ifndef DAEMON_CPU
-#define DAEMON_CPU 1 // A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
-#endif
-
-typedef struct worker_cfg_s { u32 group; u32 cpu; char** args; } worker_cfg_s;
+#include "dedipy-lib.h"
 
 // "PYTHONMALLOC=malloc",
 #define WORKER_ARGS(...) (char*[]) { "python", ##__VA_ARGS__, NULL }
 
-// TODO: FIXME: memory allocation;usage for NUMA systems
-
 static pid_t sid;
 
-static const worker_cfg_s workersCfg[WORKERS_N] = {
+static const struct { u32 group; u32 cpu; char** args; } workersCfg[WORKERS_N] = {
     // GROUP  CPU  PYTHON ARGUMENTS
     {  0,       2, WORKER_ARGS(DEDIPY_PROGNAME "-0", "F93850BE41375DB0", "0") },
     {  0,       3, WORKER_ARGS(DEDIPY_PROGNAME "-1", "F93850BE41375DB0", "1") },
@@ -60,26 +50,6 @@ static const worker_cfg_s workersCfg[WORKERS_N] = {
     {  1,       0, WORKER_ARGS("xpi.py") },
 };
 
-static volatile sig_atomic_t sigTERM;
-static volatile sig_atomic_t sigUSR1;
-static volatile sig_atomic_t sigUSR2;
-static volatile sig_atomic_t sigALRM;
-static volatile sig_atomic_t sigCHLD;
-
-static void signal_handler (const int signal, const siginfo_t* const restrict signalInfo, const void* const signalData) {
-
-    (void)signalInfo; (void)signalData;
-
-    switch (signal) {
-        case SIGTERM: sigTERM = 1; break;
-        case SIGINT:  sigTERM = 1; break;
-        case SIGUSR1: sigUSR1 = 1; break;
-        case SIGUSR2: sigUSR2 = 1; break;
-        case SIGALRM: sigALRM = 1; break;
-        case SIGCHLD: sigCHLD = 1; break;
-    }
-}
-
 static void launch_worker (const worker_s* const worker) {
 
     // CPU AFFINITY
@@ -91,13 +61,11 @@ static void launch_worker (const worker_s* const worker) {
     if (sched_setaffinity(0, sizeof(set), &set))
         fatal("FAILED TO SET CPU AFFINITY");
 
-    const pid_t pid = getpid();
-
     log("EXECUTING WORKER %u/%u GROUP %u/%u #%u ON CPU %u PID %llu",
-        (uint)worker->id, WORKERS_N, (uint)worker->groupID, (uint)worker->group->count, (uint)worker->group->id, (uint)worker->cpu, (uintll)pid);
+        (uint)worker->id, WORKERS_N, (uint)worker->groupID, (uint)worker->group->count, (uint)worker->group->id, (uint)worker->cpu, (uintll)getpid());
 
     // EXECUTE IT
-    execve(DEDIPY_PYTHON_PATH, workersCfg[worker->id].args, (char*[]) { "PATH=/usr/local/bin:/bin:/usr/bin", NULL });
+    execve(DEDIPY_PYTHON_PATH, workersCfg[worker->id].args, (char*[]) { "LD_PRELOAD=./dedipy-lib.so", "PATH=/usr/bin:/bin", NULL });
 
     //
     fatal("EXECVE FAILED");
@@ -136,8 +104,6 @@ static void launch_workers (void) {
 
 static void init_workers (void) {
 
-    log("BUFFER SIZE %llu", (uintll)DEDIPY_BUFFER_SIZE);
-
     // TODO: FIXME: INITIALIZE GROUPS
 
     log("INITIALIZING WORKERS");
@@ -147,7 +113,7 @@ static void init_workers (void) {
 
     for (uint workerID = 0; workerID != WORKERS_N ; workerID++) {
 
-        const worker_cfg_s* workerCfg = &workersCfg[workerID];
+        const typeof(&workersCfg[0]) workerCfg = &workersCfg[workerID];
 
         worker_s* worker = &BUFFER->workers[workerID];
 
@@ -172,83 +138,10 @@ static void init_workers (void) {
         fatal("INVALID CPU USAGE");
 }
 
-static void init_buffer (void) {
-
-    //
-    close(0);
-
-    // OPEN THE BUFFER FILE
-    if (open(DEDIPY_BUFFER_PATH, O_RDWR | O_CREAT) != DEDIPY_BUFFER_FD)
-        fatal("FAILED TO OPEN BUFFER");
-
-    if (ftruncate(DEDIPY_BUFFER_FD, DEDIPY_BUFFER_SIZE))
-        fatal("FTRUNCATE FAILED");
-
-    // TODO: FIXME: TER CERTEZA QUE CARREGOU TOOS OS HOLES :S
-    //  | MAP_HUGETLB | MAP_HUGE_1GB
-    if (mmap(BUFFER, DEDIPY_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED | MAP_FIXED_NOREPLACE, DEDIPY_BUFFER_FD, 0) != BUFFER)
-        fatal("FAILED TO MAP BUFFER");
-
-    // ter certeza de que tem este tamanho
-    // AO MESMO TEMPO, PREVINE QUE WRITE() NESTE FD ESCREVE SOBRE A MEMÓRIA
-    // TODO: FIXME: isso adianta, ou precisa testar um write()? :/
-    if (lseek(DEDIPY_BUFFER_FD, DEDIPY_BUFFER_SIZE, SEEK_SET) != DEDIPY_BUFFER_SIZE)
-        fatal("FAILED TO SEEK BUFFER FD");
-
-    dedipy_assert(sizeof(*BUFFER) == DEDIPY_BUFFER_SIZE);
-
-    dedipy_assert(DEDIPY_BUFFER_SIZE > 32*1024*1024);
-    dedipy_assert(DEDIPY_BUFFER_SIZE < 16ULL*1024*1024*1024*1024*1024);
-
-    log("CLEARING BUFFER MEMORY...");
-
-    memset((void*)BUFFER, 0, DEDIPY_BUFFER_SIZE);
-
-    BUFFER->check    = DEDIPY_CHECK;
-    BUFFER->version  = DEDIPY_VERSION;
-    BUFFER->size     = DEDIPY_BUFFER_SIZE;
-    BUFFER->workersN = WORKERS_N;
-    BUFFER->aOwner   = DEDIPY_ID_NONE;
-    BUFFER->iOwner   = DEDIPY_ID_NONE;
-    BUFFER->l        = BUFFER_L;
-    BUFFER->r        = BUFFER_R;
-
-    myID = DEDIPY_ID_DAEMON;
-
-    //BUFFER->futex1 = &BUFFER->a;
-   //*BUFFER->futex1 = 1;        /* State: unavailable */
-    //BUFFER->futex2 = &BUFFER->b;
-   //*BUFFER->futex2 = 1;        /* State: available */
-
-    log("CREATING FIRST FREE CHUNK OF SIZE %llu.", (uintll)sizeof(BUFFER->chunks));
-
-    // É O MAIOR CHUNK QUE PODERÁ SER CRIADO; ENTÃO AQUI CONFIRMA QUE O C_SIZE_MAX E ROOTS_SIZES_LST SÃO MAIORES DO QUE ELE
-    c_free_fill_and_register((chunk_s*)BUFFER->chunks, sizeof(BUFFER->chunks));
-
-#if DEDIPY_TEST
-    log("PRE-INITIAL VERIFY");
-
-    dedipy_verify();
-
-    log("INITIAL TESTS");
-
-    dedipy_test();
-
-    log("INITIAL VERIFY");
-
-    dedipy_verify();
-#endif
-
-    log("RUNNING");
-}
-
 static void init (void) {
 
     // SETUP LIMITS
-    const struct rlimit limit = {
-        .rlim_cur = FDS_N,
-        .rlim_max = FDS_N,
-        };
+    const struct rlimit limit = { .rlim_cur = FDS_N, .rlim_max = FDS_N };
 
     if (setrlimit(RLIMIT_NOFILE, &limit))
         fatal("FAILED TO SET MAX OPEN FILES LIMIT");
@@ -273,31 +166,6 @@ static void init (void) {
 
     if (sched_setaffinity(0, sizeof(set), &set))
         fatal("FAILED TO SET CPU AFFINITY");
-
-    // INSTALL THE SIGNAL HANDLER
-    sigTERM = sigUSR1 = sigUSR2 = sigALRM = sigCHLD = 0;
-
-    struct sigaction action;
-
-    memset(&action, 0, sizeof(action));
-
-    action.sa_sigaction = (void*)signal_handler; // TODO: FIXME: correct cast
-    action.sa_flags = SA_SIGINFO;
-
-    for (int sig = NSIG ; sig ; sig--)
-        if (sigaction(sig, &action, NULL))
-            switch (sig) {
-                case SIGINT:
-                case SIGTERM:
-                case SIGUSR1:
-                case SIGUSR2:
-                case SIGCHLD:
-                case SIGALRM:
-                    fatal("FAILED TO INSTALL SIGNAL HANDLER");
-            }
-
-    init_buffer();
-    init_workers();
 
     // INSTALA O TIMER
     const struct itimerval interval = {
@@ -402,6 +270,10 @@ int main (void) {
 
     init();
 
+    dedipy_main();
+
+    init_workers();
+
     // TODO: FIXME: CLOSE STDIN, AND REOPEN AS /DEV/NULL
 
     // TODO: FIXME: FORK?
@@ -473,8 +345,8 @@ int main (void) {
 #endif
 
     // PARA SABER QUE NINGUEM MECHEU NO FD
-    if (lseek(DEDIPY_BUFFER_FD, 0, SEEK_CUR) != DEDIPY_BUFFER_SIZE)
-        fatal_group("BUFFER FD OFFSET WAS CHANGED");
+    //if (lseek(DEDIPY_BUFFER_FD, 0, SEEK_CUR) != DEDIPY_BUFFER_SIZE)
+        //fatal_group("BUFFER FD OFFSET WAS CHANGED");
 
     log("EXITING SUCESSFULLY");
 

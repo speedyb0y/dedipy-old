@@ -1,5 +1,24 @@
+#define _GNU_SOURCE 1
 
-#include "python-dedipy.c"
+#include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdatomic.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <time.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/file.h>
+#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sched.h>
+#include <errno.h>
+#include <fcntl.h>
+
+#include "util.h"
+
+#include "dedipy-lib.h"
 
 int main (void) {
 
@@ -7,7 +26,7 @@ int main (void) {
 
     log("STARTED");
 
-    dedipy_free(dedipy_malloc(0));
+    free(malloc(0));
 
     while (!sigTERM) {
         log("ALIVE AND KICKING!!!");

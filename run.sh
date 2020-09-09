@@ -146,8 +146,11 @@ cat > dedipy-config.c <<EOF
 EOF
 
 # -Wextra
-${CC} -std=gnu17 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -Werror -Wfatal-errors -Wall -Wextra ${CC_WARNINGS} -O2 ${CC_ARGS} -fwhole-program -o ${DEDIPY_PROGNAME}-daemon dedipy-daemon.c
-${CC} -std=gnu17 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -Werror -Wfatal-errors -Wall -Wextra ${CC_WARNINGS} -O2 ${CC_ARGS} -fwhole-program -o ${DEDIPY_PROGNAME}-python dedipy-python.c
+${CC} -std=gnu17 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -Werror -Wfatal-errors -Wall -Wextra ${CC_WARNINGS} -O2 ${CC_ARGS} -c -fpic -o dedipy-lib.o dedipy-lib.c
+${CC} -std=gnu17 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -Werror -Wfatal-errors -Wall -Wextra ${CC_WARNINGS} -O2 ${CC_ARGS} -shared -o dedipy-lib.so dedipy-lib.o
+
+${CC} -std=gnu17 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -Werror -Wfatal-errors -Wall -Wextra ${CC_WARNINGS} -O2 ${CC_ARGS} -fwhole-program -o ${DEDIPY_PROGNAME}-daemon dedipy-daemon.c dedipy-lib.o
+${CC} -std=gnu17 -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 -Werror -Wfatal-errors -Wall -Wextra ${CC_WARNINGS} -O2 ${CC_ARGS} -fwhole-program -o ${DEDIPY_PROGNAME}-python dedipy-python.c dedipy-lib.o
 
 # sudo  mount -t hugetlbfs nodev /opt/
 
