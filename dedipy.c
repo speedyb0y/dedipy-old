@@ -1,599 +1,788 @@
 /*
-    TODO: FIXME: cada worker um process group? :/
-
-    mount -t hugetlbfs hugetlbfs hugetlbfs -o pagesize=1G,min_size=16106127360
-
-    touch hugetlbfs/buffer
-
-    echo $((16*512)) > /proc/sys/vm/nr_hugepages
-
-    grep -i huge /proc/meminfo
+    COMMON BETWEEN THE DAEMON AND THE INTERPRETER
 */
 
-#define _GNU_SOURCE 1
-
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <time.h>
-#include <sys/types.h>
-#include <sys/file.h>
-#include <sys/stat.h>
-#include <sys/resource.h>
-#include <sys/mman.h>
-#include <sys/time.h>
-#include <sys/wait.h>
-#include <sys/prctl.h>
-#include <fcntl.h>
-#include <sched.h>
-#include <errno.h>
-
-#include "util.h"
-
-#include "dedipy.h"
-
-#ifndef DEDIPY_PYTHON_PATH
-#define DEDIPY_PYTHON_PATH "/usr/bin/python"
+#if!(_LARGEFILE64_SOURCE && _GNU_SOURCE == 1 && _FILE_OFFSET_BITS == 64)
+#error
 #endif
 
+#include "dedipy-config.c"
+
+#if!(defined DEDIPY_BUFFER_PATH && defined DEDIPY_BUFFER_SIZE && defined DEDIPY_DEBUG && defined DEDIPY_ASSERT && defined DEDIPY_TEST)
+#error
+#endif
+
+#include "dedipy-gen.c"
+
+#if DEDIPY_TEST
+#undef DEDIPY_ASSERT
+#define DEDIPY_ASSERT 1
+#endif
+
+#if DEDIPY_ASSERT
+#define dedipy_assert(c) assert(c)
+#else
+#define dedipy_assert(c) ({ })
+#endif
+
+#if DEDIPY_DEBUG
+#define dedipy_dbg dbg
+#else
+#define dedipy_dbg(fmt, ...) ({ })
+#endif
+
+#if DEDIPY_DEBUG >= 2
+#define dedipy_dbg2 dbg
+#else
+#define dedipy_dbg2(fmt, ...) ({ })
+#endif
+
+#if DEDIPY_DEBUG >= 3
+#define dedipy_dbg3 dbg
+#else
+#define dedipy_dbg3(fmt, ...) ({ })
+#endif
+
+
+#ifndef DEDIPY_TEST_1_COUNT
+#define DEDIPY_TEST_1_COUNT 500
+#endif
+
+#ifndef DEDIPY_TEST_2_COUNT
+#define DEDIPY_TEST_2_COUNT 150
+#endif
+
+#ifndef PROGNAME
+#define PROGNAME "dedipy"
+#endif
+
+#define FD_MAX 65535
+#define FDS_N  65536
+
+#define DEDIPY_VERSION 0ULL
+
+#define DEDIPY_CHECK ((u64)( \
+       sizeof(buffer_s) \
+    + (sizeof(chunk_s)  << 32) \
+    + (sizeof(worker_s) << 33) \
+    + (sizeof(group_s)  << 34) \
+    + (sizeof(io_msg_s) << 35) \
+    ))
+
+#define DEDIPY_BUFFER_ADDR 0x900000000ULL
+
+#define BUFFER ((buffer_s*)DEDIPY_BUFFER_ADDR)
+#define DEDIPY_BUFFER_FD 0
+
+typedef enum io_msg_code_e io_msg_code_e;
+
+typedef struct io_msg_s io_msg_s;
+
+#define IO_QUEUES_N 4
+
+//volatile atomic_t ioOwners[IO_QUEUES_N];
+//io_msg_s* ioQueues[IO_QUEUES_N];
+
+#define MSG_CONNECT_FLAG_SSL
+#define MSG_CONNECT_FLAG_SSL_DONT_CHECK_CERT
+#define MSG_CONNECT_FLAG_NO_RESOLVE
+
+enum io_msg_code_e {
+    MSG_RESOLVE,
+    MSG_RESOLVE_RES,
+    MSG_CONNECT,
+    MSG_CONNECT_RES,
+    MSG_RECV,
+    MSG_RECV_RES,
+    MSG_SEND,
+    MSG_SEND_RES,
+    MSG_CLOSE,
+    MSG_CLOSE_RES,
+};
+
+struct io_msg_s {
+    io_msg_s* next;
+    u64 code:6;
+    u64 fd:22;
+    u64 flags:36;
+    u64 timeout;
+    union {
+        struct connect { u32 port; u16 hostnameLen; u16 sslHostnameLen; char* hostname; char* sslHostname; } connect;
+        struct connectRes { uint fd; int error; } connectRes;
+        struct send { uint size; uint sizeMin; char* buff; } send;
+        struct recv { uint size; uint sizeMin; char* buff; } recv;
+        struct sendRes { int error; uint sent; } sendRes;
+        struct recvRes { int error; uint received; } recvRes;
+    };
+};
+
+// AO LIBERAR UM CHUNK, TEM QUE FAZER O MERGE COM IS ADJACENTES
 //
-#ifndef BUFF_PATH
-#error ""
-#endif
+//int mallocFreeLocks[WORKERS_N];
 
-// OBS: BUFF_SIZE tem que ser ULL
-#ifndef BUFF_SIZE
-#error ""
-#endif // --> TODO: FIXME: esta variável é usada pelo malloc() para o processo atual; deve usar outra para o total
+//const int count = counter;
 
-#ifndef ALLOC_ALIGNMENT // PER PROCESS
-#define ALLOC_ALIGNMENT 65536
-#endif
+//static inline void dedipy_alloc_acquire (void) {
 
-#define BUFFER_MMAP_FLAGS (MAP_SHARED | MAP_FIXED | MAP_FIXED_NOREPLACE)
+    //const int id = (int)myID;
 
-static uint workersCounter;
+    //do {
+        //const int counter = buffer->allocCounter;
 
-// WORKERS
-typedef struct Worker Worker;
+        //do { buffer->allocAcquire = id; }
+            //while (buffer->allocCounter == counter);
 
-struct Worker {
-    u8 id;
-    u8 groupID; // IT'S ID INSIDE IT'S GROUP
-    u8 groupN; // NUMBER OF PROCESSES IN THIS GROUP
-    u8 cpu;
+    //} while (buffer->aOwner != id);
+
+    //buffer->allocAcquire = id;
+//}
+
+// varios queues de resolve
+// varios queues de I/O
+// varios queues de database
+
+
+//volatile atomic_t x; // AQUI TODOS QUE QUEREM ESCREVEM
+//volatile atomic_t y; // AQUI SÓ O OWNER ESCREVE, PASSANDO PARA ALGUÉM
+                    //// QUANDO UM ASSUME, ESCREVE SI MESMO DE NOVO NO X
+
+#define WORKERS_N 11
+#define GROUPS_N 16
+
+#define DEDIPY_ID_DAEMON WORKERS_N
+#define DEDIPY_ID_NONE (WORKERS_N + 1)
+
+#define CHUNK_ALIGNMENT 8ULL
+#define DATA_ALIGNMENT 8ULL
+
+#define C_SIZE_MIN 32ULL
+#define C_SIZE_MAX C_SIZE
+
+#define _CHUNK_USED_SIZE(dataSize) (sizeof(chunk_size_t) + ((((u64)(dataSize) + 7ULL) & ~0b111ULL)) + sizeof(chunk_size_t))
+
+// O TAMANHO DO CHUNK TEM QUE CABER ELE QUANDO ESTIVER LIVRE
+#define c_size_from_data_size(dataSize) (_CHUNK_USED_SIZE(dataSize) > C_SIZE_MIN ? _CHUNK_USED_SIZE(dataSize) : C_SIZE_MIN)
+
+#define C_SIZE  0b111111111111111111111111111111111111111111111111000ULL // NOTE: JÁ ALINHADO, PORTANTO UM VALOR SIZE FICTÍCIO PARA SER USADO COMO C_SIZE_MAX
+#define C_FREE  0b000000000000000000000000000000000000000000000000001ULL
+
+#define BUFFER_L 0ULL // USED / ASSERT BY SIZE MUST FAIL / C_LEFT()
+#define BUFFER_R 0ULL
+
+#define TOPS0_N ((ROOTS_N/64)/64)
+#define TOPS1_N (ROOTS_N/64)
+
+typedef u64 chunk_size_t;
+typedef struct chunk_s chunk_s;
+typedef struct worker_s worker_s;
+typedef struct group_s group_s;
+typedef struct buffer_s buffer_s;
+
+struct chunk_s {
+    chunk_size_t size;
+    chunk_s** ptr;
+    chunk_s* next;
+};
+
+struct group_s {
+    u16 id;
+    u16 count;
+    u32 reserved;
+    worker_s* workers;
+};
+
+struct worker_s {
+    u16 id;
+    u16 groupID; // ID DELE DENTRO DE SEU GRUPO
+    u16 cpu;
     u16 reserved;
-    u16 code; // NAO PRECISA SER PALAVRA GRANDE; É SÓ PARA TORNAR MAIS ÚNICO, JUNTO COM O PID E LAUNCHED
     u64 pid;
-    u64 again; // WHEN TO LAUNCH IT AGAIN, IN MONOTONIC TIME
-    u64 sizeWeight;
     u64 started; // TIME IT WAS LAUNCHED: IN RDTSC()
-    u64 start;
+    u64 startAgain; // WHEN TO LAUNCH IT AGAIN, IN MONOTONIC TIME
+    group_s* group;
+    worker_s* groupNext;
+};
+
+struct buffer_s {
+    volatile int aOwner; // ALLOCATION OWNER
+    volatile int iOwner; // I/O OWNER
+    group_s groups[GROUPS_N];
+    worker_s workers[WORKERS_N];
+    u64 tops0[TOPS0_N]; // BITMASK OF NON EMPTY ENTRIES IN TOPS1
+    u64 tops1[TOPS1_N]; // BITMASK OF NON EMPTY ENTRIES IN ROOTS
+    chunk_s* roots[ROOTS_N]; // THE POINTERS TO THE FREE CHUNKS
+    chunk_size_t l;
+    char chunks[DEDIPY_BUFFER_SIZE - 2*sizeof(int) - 0*sizeof(int*) - WORKERS_N*sizeof(worker_s) - GROUPS_N*sizeof(group_s) - ROOTS_N*sizeof(chunk_s*) - (TOPS0_N + TOPS1_N + 4)*sizeof(u64) - 2*sizeof(chunk_size_t)];
+    chunk_size_t r;
+    u64 workersN;
     u64 size;
-    char** args;
+    u64 version;
+    u64 check;
 };
 
-#define WORKERS_LMT (&workers[WORKERS_N])
+#define c_data(c) ((char*)(c) + sizeof(chunk_size_t))
+#define c_data_size(s) ((u64)(s) - 2*sizeof(chunk_size_t)) // DADO UM CHUNK USED DE TAL TAMANHO, CALCULA O TAMANHO DOS DADOS
+#define c_size2(c, s) ((chunk_size_t*)((char*)(c) + (u64)(s) - sizeof(chunk_size_t)))
 
-// "PYTHONMALLOC=malloc",
-#define WORKER_ARGS(...)   .args = (char*[]) { "python", ##__VA_ARGS__, NULL }
-#define WORKER_GROUP_ID(_) .groupID = (_)
-#define WORKER_GROUP_N(_)  .groupN = (_)
-#define WORKER_CPU(_)      .cpu = (_)
-#define WORKER_SIZE(_)     .size = (_##ULL) // MINIMAL
-#define WORKER_SIZE_WEIGHT(_)  .sizeWeight = ((_##U) << 18) // IF SET, THE REMAINING WILL BE DIVIDED INTO THOSE, ON EACH GROUP
+#define c_from_data(d) ((chunk_s*)((char*)(d) - sizeof(chunk_size_t)))
 
-// (1 << 31) / (1 << 18) -> aguenta weights 8192x acima
+#define c_left(c)    ((chunk_s*)((char*)(c) - ((*(chunk_size_t*)((char*)(c) - sizeof(chunk_size_t))) & C_SIZE)))
+#define c_right(c, s) ((chunk_s*)((char*)(c) + s))
 
-// TODO: FIXME: se WORKER_SIZE_WEIGHT FOR FLOAT/DOUBLE, fazer (_)*4194304
+#define assert_addr_in_buffer(a, s) dedipy_assert( (char*)BUFFER         <= (char*)(a) && ((char*)(a) + (s)) <= ((char*)BUFFER + DEDIPY_BUFFER_SIZE) )
+#define assert_addr_in_chunks(a, s) dedipy_assert( (char*)BUFFER->chunks <= (char*)(a) && ((char*)(a) + (s)) <=  (char*)&BUFFER->r )
 
-// EASY AND TOTAL CONTROL OF THE WORKERS EXECUTION PARAMETERS
-// A CPU 0 DEVE SER DEIXADA PARA O KERNEL, INTERRUPTS, E ADMIN
-#define DAEMON_CPU 1
-#define DAEMON_SIZE 0
+#define each_worker(v) (worker_s* v = BUFFER->workers; v != &BUFFER->workers[WORKERS_N]; v++)
 
-#define WORKERS_N 10
+static int myID = DEDIPY_ID_NONE;
 
-#define WORKER_SIZE_X WORKER_SIZE(BUFF_SIZE - DAEMON_SIZE - WORKERS_N*65536)/WORKERS_N
+static inline void dedipy_alloc_acquire (void) {
 
-// PROBLEMA: esta alocando por multiplos de paginas :/ entao nao dá para dividir minuciosamente as coisas
-static Worker workers[WORKERS_N] = {
-    { WORKER_ARGS(PROGNAME "-0", "F93850BE41375DB0", "0"), WORKER_GROUP_ID(0), WORKER_GROUP_N(10), WORKER_CPU( 2), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
-    { WORKER_ARGS(PROGNAME "-1", "F93850BE41375DB0", "1"), WORKER_GROUP_ID(1), WORKER_GROUP_N(10), WORKER_CPU( 3), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(2) },
-    { WORKER_ARGS(PROGNAME "-2", "F93850BE41375DB0", "2"), WORKER_GROUP_ID(2), WORKER_GROUP_N(10), WORKER_CPU( 4), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
-    { WORKER_ARGS(PROGNAME "-3", "F93850BE41375DB0", "3"), WORKER_GROUP_ID(3), WORKER_GROUP_N(10), WORKER_CPU( 5), WORKER_SIZE(4688379904), WORKER_SIZE_WEIGHT(1) },
-    { WORKER_ARGS(PROGNAME "-4", "F93850BE41375DB0", "4"), WORKER_GROUP_ID(4), WORKER_GROUP_N(10), WORKER_CPU( 6), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
-    { WORKER_ARGS(PROGNAME "-5", "F93850BE41375DB0", "5"), WORKER_GROUP_ID(5), WORKER_GROUP_N(10), WORKER_CPU( 7), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
-    { WORKER_ARGS(PROGNAME "-6", "F93850BE41375DB0", "6"), WORKER_GROUP_ID(6), WORKER_GROUP_N(10), WORKER_CPU( 8), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
-    { WORKER_ARGS(PROGNAME "-7", "F93850BE41375DB0", "7"), WORKER_GROUP_ID(7), WORKER_GROUP_N(10), WORKER_CPU( 9), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
-    { WORKER_ARGS(PROGNAME "-8", "F93850BE41375DB0", "8"), WORKER_GROUP_ID(8), WORKER_GROUP_N(10), WORKER_CPU(10), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
-    { WORKER_ARGS(PROGNAME "-9", "F93850BE41375DB0", "9"), WORKER_GROUP_ID(9), WORKER_GROUP_N(10), WORKER_CPU(11), WORKER_SIZE(0), WORKER_SIZE_WEIGHT(1) },
-};
+    int noID = DEDIPY_ID_NONE;
 
-//
-static volatile sig_atomic_t sigTERM = 0;
-static volatile sig_atomic_t sigUSR1 = 0;
-static volatile sig_atomic_t sigUSR2 = 0;
-static volatile sig_atomic_t sigALRM = 0;
-static volatile sig_atomic_t sigCHLD = 0;
-
-static void signal_handler (const int signal, const siginfo_t* const restrict signalInfo, const void* const signalData) {
-
-    (void)signalInfo;
-    (void)signalData;
-
-    switch (signal) {
-        case SIGTERM:
-        case SIGINT:
-            sigTERM = 1;
-            break;
-        case SIGUSR1:
-            sigUSR1 = 1;
-            break;
-        case SIGUSR2:
-            sigUSR2 = 1;
-            break;
-        case SIGALRM:
-            sigALRM = 1;
-            break;
-        case SIGCHLD:
-            sigCHLD = 1;
-            break;
+    while (!__atomic_compare_exchange_n(&BUFFER->aOwner, &noID, myID, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+        noID = DEDIPY_ID_NONE;
+        __atomic_thread_fence(__ATOMIC_SEQ_CST); // TODO: FIXME: SOME BUSY LOOP :/
     }
 }
 
-static pid_t sid;
-
-static void launch_worker (const Worker* const worker) {
-
-    // CPU AFFINITY
-    cpu_set_t set;
-
-    CPU_ZERO(&set);
-    CPU_SET(worker->cpu, &set);
-
-    if (sched_setaffinity(0, sizeof(set), &set))
-        fatal("FAILED TO SET CPU AFFINITY");
-
-    // ROOTS IS ALREADY INITIALIZED BY MEMSET
-
-    // IF A PROCESS TRY TO RUN WITHOUT INITIALIZING, MALLOC WILL JUST FAIL, AS ALL FREE ROOTS ARE NULL
-
-    //
-    if (dup2(WORKER_GET_FD(worker->id), SELF_GET_FD) != SELF_GET_FD ||
-        dup2(WORKER_PUT_FD(worker->id), SELF_PUT_FD) != SELF_PUT_FD)
-        fatal("FAILED TO DUPLICATE WORKER -> SELF FDS");
-
-    if (close(DAEMON_GET_FD))
-        fatal("FAILED TO CLOSE DAEMON GET FD");
-
-    const pid_t pid = getpid();
-
-    char env0[512];
-
-    snprintf(env0, sizeof(env0), "DEDIPY=" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX"  "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX" "%016llX",
-        (uintll)worker->cpu, (uintll)pid, (uintll)BUFF_FD, (uintll)BUFFER_MMAP_FLAGS, (uintll)BUFF_ADDR, (uintll)BUFF_SIZE, (uintll)worker->start, (uintll)worker->size, (uintll)worker->code, (uintll)worker->started, (uintll)worker->id, (uintll)WORKERS_N, (uintll)worker->groupID, (uintll)worker->groupN);
-
-    dbg("EXECUTING WORKER %u/%u ON CPU %u START %llu SIZE %llu PID %llu", (uint)worker->id, (uint)WORKERS_N, (uint)worker->cpu, (uintll)worker->start, (uintll)worker->size, (uintll)pid);
-
-    // EXECUTE IT
-    execve(DEDIPY_PYTHON_PATH, worker->args, (char*[]) { env0, "PATH=/usr/local/bin:/bin:/usr/bin", NULL });
-
-    //
-    fatal("EXECVE FAILED");
+static inline void dedipy_alloc_release (void) {
+    __atomic_store_n(&BUFFER->aOwner, DEDIPY_ID_NONE, __ATOMIC_SEQ_CST);
 }
 
-// TODO: FIXME: TER CERTEZA DE QUE É BOOT TIME, PARA QUE JAMAIS TENHA OVERFLOW
-static inline u64 getseconds (void) {
+static inline void c_free_fill_and_register (chunk_s* const c, u64 s) {
 
-    struct timespec t = { .tv_sec = 0, .tv_nsec = 0 };
+    assert_addr_in_chunks(c, s);
 
-    if (clock_gettime(CLOCK_MONOTONIC, &t))
-        fatal("FAILED TO GET MONOTONIC TIME");
+    *c_size2(c, s) = c->size = s | C_FREE;
 
-    return (u64)t.tv_sec;
+    s =
+        (s <= ROOTS_MAX_0) ? (s >> ROOTS_DIV_0) + ROOTS_GROUPS_OFFSET_0 :
+        (s <= ROOTS_MAX_1) ? (s >> ROOTS_DIV_1) + ROOTS_GROUPS_OFFSET_1 :
+        (s <= ROOTS_MAX_2) ? (s >> ROOTS_DIV_2) + ROOTS_GROUPS_OFFSET_2 :
+        (s <= ROOTS_MAX_3) ? (s >> ROOTS_DIV_3) + ROOTS_GROUPS_OFFSET_3 :
+        (s <= ROOTS_MAX_4) ? (s >> ROOTS_DIV_4) + ROOTS_GROUPS_OFFSET_4 :
+        (s <= ROOTS_MAX_5) ? (s >> ROOTS_DIV_5) + ROOTS_GROUPS_OFFSET_5 :
+        (s <= ROOTS_MAX_6) ? (s >> ROOTS_DIV_6) + ROOTS_GROUPS_OFFSET_6 :
+        (s <= ROOTS_MAX_7) ? (s >> ROOTS_DIV_7) + ROOTS_GROUPS_OFFSET_7 :
+            ROOTS_N - 1
+        ;
+
+    if ((c->next = *(c->ptr = &BUFFER->roots[s])))
+        (*c->ptr)->ptr = &c->next;
+    else { // SABEMOS QUE AGORA TEM PELO MENOS UM NESTES GRUPOS
+        BUFFER->tops1[s >>  6] |= 1ULL << ( s       & 0b111111U);
+        BUFFER->tops0[s >> 12] |= 1ULL << ((s >> 6) & 0b111111U);
+    }
+
+    *c->ptr = c;
 }
 
-// LAUNCH ALL PROCESSES STOPPED
-static void launch_workers (void) {
+static inline void c_free_unregister (chunk_s* const c) {
 
-    const u64 now = getseconds();
+    assert_addr_in_chunks(c, C_SIZE_MIN);
 
-    Worker* worker = workers;
-
-    do { // TODO: FIXME: limpar os pipes antes de iniciar o processo?
-        if (worker->pid == 0) {
-            // SÓ SE JÁ ESTIVER NA HORA
-            if (worker->again <= now) {
-                worker->again = now + 30;
-                worker->started = rdtsc();
-                worker->code = (u16)workersCounter++;
-                const pid_t pid = fork();
-                if (pid == 0)
-                    launch_worker(worker);
-                worker->pid = (u64)pid;
-            }
+    if (c->next) {
+        c->next->ptr = c->ptr;
+        *c->ptr = c->next;
+    } else { *c->ptr = NULL;
+        if (c->ptr < &BUFFER->roots[ROOTS_N]) {
+            const uint idx = (uint)(c->ptr - BUFFER->roots);
+            if(!(BUFFER->tops1[idx >>  6] ^= 1ULL << ( idx      & 0b111111U)))
+                 BUFFER->tops0[idx >> 12] ^= 1ULL << ((idx >>6) & 0b111111U);
         }
-    } while (++worker != WORKERS_LMT);
+    }
 }
 
-static void init_workers (void) {
+void dedipy_free_ (void* const d) {
+//DBGPRINT("FREE()");
+    if (d) {
+        chunk_s* c = c_from_data(d);
 
-    dbg("BUFFER SIZE %llu", (uintll)BUFF_SIZE);
-    dbg("DAEMON SIZE %llu", (uintll)DAEMON_SIZE);
+        assert_addr_in_chunks(c, C_SIZE_MIN);
 
-    //
-    workersCounter = 0;
+        u64 s = c->size & C_SIZE;
 
-    uint workerID = 0;
+        assert_addr_in_chunks(c, s);
 
-    // TODO: FIXME: fazer por grupos
-    // last = 0 // ultimo grupoID visto
-    //   loopa de novo, aumentando, até que nao haja nenhum grupo ID > que este
-    //     dai calcula o tamanho total do grupo atual
-    // depois vai pegar a memória que sobra, e dividir ela igualmente entre os grupos
-    // e dai, dividir a memória que sobrou para o grupom entre os membros dele
-    { Worker* worker = workers; u64 weights = 0;
-        // CALCULA A PROPORÇÃO DE CADA UM
-        // SE O MÍNIMO DE UM É MAIOR DO QUE SUA PROPORÇÃO, USA ESTE MÍNIMO/DISPONIVEL
-        // SOMA O TOTAL DOS PESOS
-        while (worker != WORKERS_LMT)
-            weights += (worker++)->sizeWeight;
-        // PEGA O QUE TEM DISPONÍVEL
-        u64 available = BUFF_SIZE - DAEMON_SIZE; // NOTA:
-        // DISTRIBUI ESTE DISPONÍVEL
-        while (worker-- != workers) {
-            worker->size += ALLOC_ALIGNMENT - 1; // ALINHA PARA CIMA
-            worker->size /= ALLOC_ALIGNMENT;
-            worker->size *= ALLOC_ALIGNMENT;
-            if (worker->size <= (((u64)worker->sizeWeight * (u64)available) / (u64)weights)) {
-                available -= worker->size; // ESTE PRECISA DE MAIS DO QUE O PROPORCIONAL, ENTAO RESERVA ELE NO TOTAL
-                worker->sizeWeight = 0; // NAO USAR O PESO
-            }
-        } // RECALCULAR OS PESOS
-        weights = 0;
-        while (++worker != WORKERS_LMT)
-            weights += worker->sizeWeight;
-        // DIVIDE O RESTANTE ENTRE OS QUE VÃO USAR O WEIGHT
-        // OS DEMAIS JA TEM SEU TAMANHO TOTAL, QUE JÁ É >= SEU MÍNIMO
-        // O QUANTO CADA UM REPRESENTA DENTRO DESSE TOTAL
-        while (worker-- != workers)
-            if (worker->sizeWeight) {
-                worker->size = ((u64)worker->sizeWeight * (u64)available) / (u64)weights;
-                worker->size += ALLOC_ALIGNMENT - 1; // ALINHA PARA CIMA
-                worker->size /= ALLOC_ALIGNMENT;
-                worker->size *= ALLOC_ALIGNMENT;
-            }
+        chunk_s* const left = c_left(c);
+
+        if (left->size & C_FREE) {
+            s += left->size & C_SIZE;
+            c_free_unregister((c = left));
+        }
+
+        chunk_s* const right = c_right(c, s);
+
+        if (right->size & C_FREE) {
+            s += right->size & C_SIZE;
+            c_free_unregister(right);
+        }
+
+        c_free_fill_and_register(c, s);
+    }
+}
+
+void dedipy_free (void* const d) {
+    dedipy_alloc_acquire();
+    dedipy_free_(d);
+    dedipy_alloc_release();
+}
+
+void* dedipy_malloc_ (const size_t size_) {
+
+    u64 size = size_;
+
+    if (size == 0)
+        return NULL;
+
+    if ((size = c_size_from_data_size(size)) >= C_SIZE_MAX)
+        return NULL;
+
+    // O INDEX, A PARTIR DO QUAL, TODOS OS CHUNKS GARANTEM ESTE SIZE
+
+    u64 idx =
+        (size <= ROOTS_MAX_0) ? (size >> ROOTS_DIV_0) + (!!(size & ROOTS_GROUPS_REMAINING_0)) + ROOTS_GROUPS_OFFSET_0 :
+        (size <= ROOTS_MAX_1) ? (size >> ROOTS_DIV_1) + (!!(size & ROOTS_GROUPS_REMAINING_1)) + ROOTS_GROUPS_OFFSET_1 :
+        (size <= ROOTS_MAX_2) ? (size >> ROOTS_DIV_2) + (!!(size & ROOTS_GROUPS_REMAINING_2)) + ROOTS_GROUPS_OFFSET_2 :
+        (size <= ROOTS_MAX_3) ? (size >> ROOTS_DIV_3) + (!!(size & ROOTS_GROUPS_REMAINING_3)) + ROOTS_GROUPS_OFFSET_3 :
+        (size <= ROOTS_MAX_4) ? (size >> ROOTS_DIV_4) + (!!(size & ROOTS_GROUPS_REMAINING_4)) + ROOTS_GROUPS_OFFSET_4 :
+        (size <= ROOTS_MAX_5) ? (size >> ROOTS_DIV_5) + (!!(size & ROOTS_GROUPS_REMAINING_5)) + ROOTS_GROUPS_OFFSET_5 :
+        (size <= ROOTS_MAX_6) ? (size >> ROOTS_DIV_6) + (!!(size & ROOTS_GROUPS_REMAINING_6)) + ROOTS_GROUPS_OFFSET_6 :
+        (size <= ROOTS_MAX_7) ? (size >> ROOTS_DIV_7) + (!!(size & ROOTS_GROUPS_REMAINING_7)) + ROOTS_GROUPS_OFFSET_7 :
+            ROOTS_N - 1
+        ;
+
+    chunk_s* used; u64 tid; u64 found;
+
+    if ((found = BUFFER->tops1[idx >> 6] & (0xFFFFFFFFFFFFFFFFULL << (idx & 0b111111ULL)))) {
+        found = ctz_u64(found) | (idx & ~(u64)0b111111ULL); // TODO: FIXME: WHY IS THIS GIVING ME A WARN?
+        goto FOUND;
     }
 
-    Worker* worker = workers;
+    tid = idx >> 12;
 
-    u64 offset = DAEMON_SIZE;
+    if ((found = BUFFER->tops0[tid] & (0xFFFFFFFFFFFFFFFFULL << (((idx >> 6) + 1) & 0b111111ULL)))) {
+        tid  = (tid << 6) | ctz_u64(found);
+        found = (tid << 6) | ctz_u64(BUFFER->tops1[tid]);
+        if (found >= idx)
+            goto FOUND;
+    }
 
-    u64 cpus = 1ULL << DAEMON_CPU;
+    idx >>= 12;
 
     do {
-        worker->id = (u8)workerID++;
-        worker->pid = 0;
-        worker->code = 0;
-        worker->again = 0;
-        worker->started = 0;
-        worker->start = offset;
-        offset += worker->size;
-        cpus |= (1ULL << worker->cpu);
-        dbg("WORKER %u START %llu SIZE %llu", worker->id, (uintll)worker->start, (uintll)worker->size);
-    } while (++worker != WORKERS_LMT);
+        if (++idx == TOPS0_N)
+            return NULL;
+    } while (!(found = BUFFER->tops0[idx]));
 
-    dbg("TOTAL USED %llu; UNUSED %lld", (uintll)offset, (long long int)(BUFF_SIZE - offset));
+    idx   = (idx << 6) | ctz_u64(found);
+    found = (idx << 6) | ctz_u64(BUFFER->tops1[idx]);
 
-    // MAKE SURE EVERYTHING HAS FIT
-    if (offset > BUFF_SIZE)
-        fatal("INSUFFICIENT BUFFER");
+FOUND:
 
-    // ONE, AND ONLY ONE PROCESS PER CPU
-    if (__builtin_popcountll(cpus) != (WORKERS_N + 1))
-        fatal("INVALID CPU USAGE");
+    dedipy_assert(found < ROOTS_N);
 
-    //
-    { int fds[2] = { -1, -1 };
-        if (pipe2(fds, O_DIRECT) ||
-            dup2(fds[0], ANY_GET_FD) != ANY_GET_FD || close(fds[0]) ||
-            dup2(fds[1], ANY_PUT_FD) != ANY_PUT_FD || close(fds[1])
-        ) fatal("");
+    used = BUFFER->roots[found];
+
+    dedipy_assert(used);
+
+    u64 usedSize = used->size & C_SIZE;
+
+    dedipy_assert(usedSize >= size_);
+
+    const u64 freeSizeNew = usedSize - size;
+
+    c_free_unregister(used);
+
+    if (freeSizeNew >= C_SIZE_MIN) {
+        c_free_fill_and_register(used, freeSizeNew);
+        used = (chunk_s*)((char*)used + freeSizeNew);
+        usedSize = size;
     }
 
-    { int fds[2] = { -1, -1 };
-        if (pipe2(fds, O_DIRECT) ||
-            dup2(fds[0], DAEMON_GET_FD) != DAEMON_GET_FD || close(fds[0]) ||
-            dup2(fds[1], DAEMON_PUT_FD) != DAEMON_PUT_FD || close(fds[1])
-        ) fatal("");
+    *c_size2(used, usedSize) = used->size = usedSize;
+
+    return c_data(used);
+}
+
+void* dedipy_malloc (const size_t size_) {
+    dedipy_alloc_acquire();
+    void* const ret = dedipy_malloc_(size_);
+    dedipy_alloc_release();
+    return ret;
+}
+
+void* dedipy_calloc_ (const size_t n, const size_t size_) {
+
+    const u64 size = (u64)n * (u64)size_;
+
+    void* const data = dedipy_malloc(size);
+
+    if (data)
+        memset(data, 0, size);
+
+    return data;
+}
+
+void* dedipy_calloc (const size_t n, const size_t size_) {
+    dedipy_alloc_acquire();
+    void* const ret = dedipy_calloc_(n, size_);
+    dedipy_alloc_release();
+    return ret;
+}
+
+void* dedipy_realloc_ (void* const d_, const size_t dsNew_) {
+
+    if (d_ == NULL) // GLIBC: IF PTR IS NULL, THEN THE CALL IS EQUIVALENT TO MALLOC(SIZE), FOR ALL VALUES OF SIZE
+        return dedipy_malloc_(dsNew_);
+
+    if (dsNew_ == 0) { // GLIBC: IF SIZE IS EQUAL TO ZERO, AND PTR IS NOT NULL, THEN THE CALL IS EQUIVALENT TO FREE(PTR)
+        dedipy_free_(d_);
+        return NULL;
     }
 
-    { //
-        uint workerID = WORKERS_N;
+    u64 sNew = c_size_from_data_size(dsNew_);
 
-        while (workerID--) { int fds[2] = { -1, -1 };
-            if (pipe2(fds, O_DIRECT) ||
-              dup2(fds[0], WORKER_GET_FD(workerID)) != WORKER_GET_FD(workerID) || close(fds[0]) ||
-              dup2(fds[1], WORKER_PUT_FD(workerID)) != WORKER_PUT_FD(workerID) || close(fds[1])
-            ) fatal("");
+    if (sNew > C_SIZE_MAX)
+        return NULL;
+
+    chunk_s* const c = c_from_data(d_);
+
+    u64 s = c->size & C_SIZE;
+
+    if (s >= sNew) {
+        if ((s - sNew) < 64)
+            // MAS NÃO VALE A PENA DIMINUIR
+            return d_;
+        // TODO: FIXME: SE FOR PARA DIMINUIR, DIMINUI!!!
+        return d_;
+    }
+
+    chunk_s* r = c_right(c, s);
+
+    if (r->size & C_FREE) {
+
+        const u64 rs = r->size & C_SIZE;
+
+        const u64 rsCut = sNew - s;
+
+        if (rs >= rsCut) {
+
+            const u64 rsNew = rs - rsCut;
+
+            c_free_unregister(r);
+
+            if (rsNew >= C_SIZE_MIN) {
+                s += rsCut;
+                r = (chunk_s*)((char*)r + rsCut);
+                c_free_fill_and_register(r, rsNew);
+            } else
+                s += rs;
+
+            *c_size2(c, s) = c->size = s;
+
+            return c_data(c);
         }
     }
+
+    void* const d = dedipy_malloc_(dsNew_);
+
+    if (d) {
+        memcpy(d, d_, c_data_size(s));
+
+        dedipy_free_(c_data(c));
+    }
+
+    return d;
 }
 
-static void init_timer (void) {
-
-    // INSTALA O TIMER
-    const struct itimerval interval = {
-        .it_interval.tv_sec = 15,
-        .it_interval.tv_usec = 0,
-        .it_value.tv_sec = 15,
-        .it_value.tv_usec = 0,
-        };
-
-    if (setitimer(ITIMER_REAL, &interval, NULL))
-        fatal("");
+void* dedipy_realloc (void* const d_, const size_t dsNew_) {
+    dedipy_alloc_acquire();
+    void* const ret = dedipy_realloc_(d_, dsNew_);
+    dedipy_alloc_release();
+    return ret;
 }
 
-static void init_buffer (void) {
+void* dedipy_reallocarray (void *ptr, size_t nmemb, size_t size) {
 
-    // OPEN THE BUFFER FILE
+    (void)ptr;
+    (void)nmemb;
+    (void)size;
+
+    fatal("MALLOC - REALLOCARRAY");
+}
+
+#if DEDIPY_TEST
+static inline u64 dedipy_test_random (const u64 x) {
+
+    static volatile u64 _rand = 0;
+
+    _rand += x;
+    _rand += rdtsc() & 0xFFFULL;
+#if 0
+    _rand += __builtin_ia32_rdrand64_step((uintll*)&_rand);
+#endif
+    return _rand;
+}
+
+static inline u64 dedipy_test_size (u64 x) {
+
+    x = dedipy_test_random(x);
+
+    return (x >> 2) & (
+        (x & 0b1ULL) ? (
+            (x & 0b10ULL) ? 0xFFFFFULL :   0xFFULL
+        ) : (
+            (x & 0b10ULL) ?   0xFFFULL : 0xFFFFULL
+        ));
+}
+
+// MUST HAVE SAME ALIGNMENTS AS MALLOC! :/ @_@
+void dedipy_verify (void) {
+
+    dedipy_dbg3("VERIFY");
+
+    // A CHANGE ON THOSE WILL REQUIRE A REVIEW
+    assert(8 == sizeof(chunk_size_t));
+    assert(8 == sizeof(u64));
+    assert(8 == sizeof(off_t));
+    assert(8 == sizeof(size_t));
+    assert(8 == sizeof(void*));
+
+    assert(BUFFER->version  == DEDIPY_VERSION);
+    assert(BUFFER->check    == DEDIPY_CHECK);
+    assert(BUFFER->size     == DEDIPY_BUFFER_SIZE);
+    assert(BUFFER->workersN == WORKERS_N);
+
     //
-    const int fd = open(BUFF_PATH, O_RDWR | O_CREAT);
-    // MAP_LOCKED vs MAP_NORESERVE
-    // TAMANHO TEM QUE SER MULTIPLO DO PAGE SIZE A SER USADO
-    // MAP_POPULATE | MAP_LOCKED | MAP_FIXED_NOREPLACE
+    assert(sizeof(*BUFFER) == DEDIPY_BUFFER_SIZE);
 
-    if (fd == -1)
-        fatal("FAILED TO OPEN BUFFER");
-    if (dup2(fd, BUFF_FD) != BUFF_FD)
-        fatal("");
-    if (close(fd))
-        fatal("");
+    // LEFT/RIGHT
+    assert(BUFFER->l == BUFFER_L);
+    assert(BUFFER->r == BUFFER_R);
 
-#if 0
-    if (ftruncate(BUFF_FD, BUFF_SIZE))
-        fatal("FTRUNCATE FAILED");
-#endif
+    u64 totalFree = 0;
+    u64 totalUsed = 0;
 
-    // TODO: FIXME: TER CERTEZA QUE CARREGOU TOOS OS HOLES :S
-    //  | MAP_HUGETLB | MAP_HUGE_1GB
-    if (mmap(BUFF_ADDR, BUFF_SIZE, PROT_READ | PROT_WRITE, BUFFER_MMAP_FLAGS, BUFF_FD, 0) != BUFF_ADDR)
-        fatal("FAILED TO MAP BUFFER");
+    u64 countFree = 0;
+    u64 countUsed = 0;
 
-    // ter certeza de que tem este tamanho
-    // AO MESMO TEMPO, PREVINE QUE WRITE() NESTE FD ESCREVE SOBRE A MEMÓRIA
-    // TODO: FIXME: isso adianta, ou precisa testar um write()? :/
-    if (lseek(BUFF_FD, BUFF_SIZE, SEEK_SET) != BUFF_SIZE)
-        fatal("FAILED TO SEEK BUFFER FD");
+    dedipy_dbg3("VERIFY - ALL CHUNKS");
+
+    const chunk_s* c = (chunk_s*)BUFFER->chunks;
+
+    while ((void*)c != (void*)&BUFFER->r) {
+
+        assert_addr_in_chunks(c, C_SIZE_MIN);
+        assert_addr_in_chunks(c, c->size & C_SIZE);
+
+        assert(((uintptr_t)c % CHUNK_ALIGNMENT) == 0);
+
+        const u64 s = c->size & C_SIZE;
+
+        assert(s & C_SIZE); // NÃO É 0
+        assert((s & C_SIZE) >= C_SIZE_MIN);
+        assert((s & C_SIZE) <= C_SIZE_MAX);
+        assert((s & C_SIZE) == s); // O TAMANHO ESTÁ DENTRO DA MASK DE TAMANHO
+        assert(((s & C_SIZE) % CHUNK_ALIGNMENT) == 0); // ESTÁ ALINHADO
+
+        assert(c->size == *c_size2(c, s));
+
+        if (c->size & C_FREE) {
+            assert(c->ptr);
+            assert_addr_in_buffer(c->ptr, sizeof(chunk_s*));
+            assert(*c->ptr == c);
+            assert(*(c->ptr) == c);
+            if (c->next) {
+                assert_addr_in_chunks(c->next, C_SIZE_MIN);
+                assert_addr_in_chunks(c->next, c->next->size & C_SIZE);
+                assert(c->next->size & C_FREE);
+                assert(c->next->ptr == &c->next);
+                assert(((uintptr_t)c->next % CHUNK_ALIGNMENT) == 0);
+                assert(c->next->ptr == &c->next);
+            }
+            totalFree += s;
+            countFree++;
+        } else {
+            assert(c_from_data(c_data(c)) == c);
+            assert(((uintptr_t)c_data(c) % DATA_ALIGNMENT) == 0);
+            totalUsed += s;
+            countUsed++;
+        }
+
+        c = c_right(c, s);
+    }
+
+    dedipy_dbg3("USED COUNT %llu SIZE %llu + FREE COUNT %llu SIZE %llu", (uintll)countUsed, (uintll)totalUsed, (uintll)countFree, (uintll)totalFree);
+
+    assert(sizeof(BUFFER->chunks) == (totalFree + totalUsed));
+
+    // VERIFICA OS FREES
+    dedipy_dbg3("VERIFY - FREES");
+
+    chunk_s** ptrRoot = BUFFER->roots;
+
+    u64 lastSlotMaximum = 0;
+
+    uint idx = 0;
+
+    do {
+        chunk_s* const* ptr = ptrRoot;
+
+        u64 thisSlotMaximum = lastSlotMaximum;
+
+        const chunk_s* c = *ptrRoot;
+
+        while (c) {
+            assert_addr_in_chunks(c, C_SIZE_MIN);
+            assert_addr_in_chunks(c, c->size & C_SIZE);
+
+            const u64 s = c->size & C_SIZE;
+
+            assert(s >= C_SIZE_MIN);
+            assert(s <  C_SIZE_MAX);
+            assert(c->size & C_FREE);
+            assert(s >= lastSlotMaximum);
+            assert(c->size == *c_size2(c, s));
+            assert(c->ptr == ptr);
+
+            if (thisSlotMaximum < s)
+                thisSlotMaximum = s;
+
+            totalFree -= s;
+            countFree--;
+
+            ptr = &c->next;
+
+            c = c->next;
+        }
+
+        ptrRoot++;
+
+        lastSlotMaximum = thisSlotMaximum;
+
+    } while (++idx != ROOTS_N);
+
+    assert(ptrRoot == &BUFFER->roots[ROOTS_N]);
+
+    assert(totalFree == 0);
+    assert(countFree == 0);
+
+    dedipy_dbg3("VERIFY - DONE");
 }
 
-static void init_limits (void) {
+static void dedipy_test_0 (void) {
 
-    // SETUP LIMITS
-    const struct rlimit limit = {
-        .rlim_cur = FD_MAX,
-        .rlim_max = FD_MAX,
-        };
+    dedipy_dbg("TEST 0");
 
-    if (setrlimit(RLIMIT_NOFILE, &limit))
-        fatal("");
+    for (uint c = 200; c; c--) {
+
+        dedipy_free(NULL);
+
+        assert(dedipy_malloc(0) == NULL);
+
+        dedipy_free(dedipy_malloc(dedipy_test_size(c + 1)));
+        dedipy_free(dedipy_malloc(dedipy_test_size(c + 2)));
+        dedipy_free(dedipy_malloc(dedipy_test_size(c + 3)));
+
+        dedipy_free(dedipy_realloc(dedipy_malloc(dedipy_test_size(c + 4)), dedipy_test_size(c + 10)));
+        dedipy_free(dedipy_realloc(dedipy_malloc(dedipy_test_size(c + 5)), dedipy_test_size(c + 11)));
+
+        dedipy_free(dedipy_malloc(dedipy_test_size(c + 6)));
+        dedipy_free(dedipy_malloc(dedipy_test_size(c + 7)));
+
+        dedipy_free(dedipy_realloc(dedipy_malloc(dedipy_test_size(c + 8)), dedipy_test_size(c + 12)));
+        dedipy_free(dedipy_realloc(dedipy_malloc(dedipy_test_size(c + 9)), dedipy_test_size(c + 13)));
+    }
+
+    dedipy_dbg("TEST 0 - DONE");
 }
 
-static void init_sched (void) {
+static void dedipy_test_1 (void) {
 
-#if 0
-    // FIFO SCHEDULING
-    struct sched_param params;
+    dedipy_dbg("TEST 1");
 
-    memset(&params, 0, sizeof(params));
+    for (uint c = 500; c; c--) {
 
-    params.sched_priority = 1;
+        dedipy_dbg("TEST 1 - COUNTER %u", c);
 
-    if (sched_setscheduler(0, SCHED_FIFO, &params) == -1)
-        fatal("FAILED TO SET SCHEDULING");
-#endif
+        void** new; u64 size; void** last = NULL;
 
-    // CPU AFFINITY
-    cpu_set_t set;
+        while ((new = dedipy_malloc((size = sizeof(void**) + dedipy_test_size(c))))) {
 
-    CPU_ZERO(&set);
-    CPU_SET(DAEMON_CPU, &set);
+            memset(new, 0xFF, size);
 
-    if (sched_setaffinity(0, sizeof(set), &set))
-        fatal("FAILED TO SET CPU AFFINITY");
-}
-
-static void init_signals (void) {
-
-    // INSTALL THE SIGNAL HANDLER
-    struct sigaction action;
-
-    memset(&action, 0, sizeof(action));
-
-    action.sa_sigaction = (void*)signal_handler; // TODO: FIXME: correct cast
-    action.sa_flags = SA_SIGINFO;
-
-    if (sigaction(SIGTERM,   &action, NULL) ||
-        sigaction(SIGUSR1,   &action, NULL) ||
-        sigaction(SIGUSR2,   &action, NULL) ||
-        sigaction(SIGIO,     &action, NULL) ||
-        sigaction(SIGURG,    &action, NULL) ||
-        sigaction(SIGPIPE,   &action, NULL) ||
-        sigaction(SIGHUP,    &action, NULL) ||
-        sigaction(SIGQUIT,   &action, NULL) ||
-        sigaction(SIGINT,    &action, NULL) ||
-        sigaction(SIGCHLD,   &action, NULL) ||
-        sigaction(SIGALRM,   &action, NULL)
-      ) fatal("FAILED TO INSTALL SIGNAL HANDLER");
-}
-
-static void handle_sig_child (void) {
-    if (sigCHLD) {
-        sigCHLD = 0;
-
-        pid_t pid;
-
-        // 0 -> CHILDS BUT NONE EXITED
-        while ((pid = waitpid(-1, NULL, WNOHANG))) {
-
-            if (pid == -1) {
-                if (errno == EINTR)
-                    continue;
-                if (errno == ECHILD)
-                    break; // NO MORE CHILDS
-                fatal_group("WAIT FAILED");
+            if (dedipy_test_random(c) % 8 == 0) { void** new2; u64 size2;
+                if ((new2 = dedipy_realloc(new, (size2 = sizeof(void**) + dedipy_test_size(c)))))
+                    memset((new = new2), 0xFF, (size = size2));
             }
 
-            // IDENTIFICA QUEM FOI E ESQUECE SEU PID
-            Worker* worker = workers;
+            if (dedipy_test_random(c) % 8 == 0) {
+                dedipy_free(new);
+                continue;
+            }
 
-            do {
-                if (worker->pid == (u64)pid) {
-                    worker->pid = 0;
-                    dbg("WORKER %u WITH PID %llu DIED", worker->id, (uintll)pid);
-                }
-            } while (++worker != WORKERS_LMT);
+            // TODO: FIXME: uma porcentagem, dar dedipy_free() aqui ao invés de incluir na lista
+            *new = last;
+            last = new;
         }
-    }
-}
 
-static void handle_sig_usr1 (void) {
-    if (sigUSR1) {
-        sigUSR1 = 0;
-
-    }
-}
-
-static void handle_sig_usr2 (void) {
-    if (sigUSR2) {
-        sigUSR2 = 0;
-
-    }
-}
-
-static void handle_sig_alrm (void) {
-    if (sigALRM) {
-        sigALRM = 0;
-
-    }
-}
-
-static void main_loop (void) {
-
-    while (sigTERM == 0) {
-
-        handle_sig_alrm();
-        handle_sig_usr1();
-        handle_sig_usr2();
-        handle_sig_child();
-
-        launch_workers();
-
-        // DO WHATEVER WE HAVE TO DO
-        pause();
-    }
-}
-
-// RETORNA: SE TEM QUE DAR WAIT
-static int main_wait_workers (void) {
-
-    loop {
-        const pid_t pid = wait(NULL);
-
-        if (pid == -1)
-            return errno != ECHILD;
-        // TODO: FIXME: identifica qual foi e limpa ele
-    }
-}
-
-int main (void) {
-
-    if (prctl(PR_SET_NAME, (unsigned long)PROGNAME, 0, 0, 0))
-        fatal_group("FAILED TO SET PROCESS NAME");
-
-    sid = setsid();
-
-    init_signals();
-    init_sched();
-    init_limits();
-
-    // TODO: FIXME: CLOSE STDIN, AND REOPEN AS /DEV/NULL
-
-    // TODO: FIXME: FORK?
-
-    // TODO: FIXME: other limits
-
-    // TODO: FIXME: setup /proc pipe limits
-    // TODO: FIXME: setup /proc scheduling
-
-    // TODO: FIXME: setup pipes sizes
-
-    // TODO: FIXME: setup malloc.c for us to use in the daemon process -> called manually, not injected
-
-    // THE PROCESS AND ALL ITS THREADS MUST RUN ON THE SAME CPU, IN FIFO SCHEDULING MODE
-    // THIS MAKES EVERYTHING THREAD SAFE (BETWEEN TWO POINTS WITH NO SYSCALLS/BLOCKING OPERATIONS)
-    // - WILL SIGNALS INTERFER IN CONTEXT SWITCHING?
-    // - WILL STACK INCREASE / PAGE FAULTS INTERFER IN CONTEXT SWITCHING?
-
-    //
-    init_workers();
-    init_buffer();
-    init_timer();
-
-    // LANÇA TODOS OS PROCESSOS
-    launch_workers();
-
-    //WORKER_PUT(1, "EU SOU O BOZO\n", 14);
-
-    //
-    main_loop();
-
-    // PARA SABER QUE NINGUEM MECHEU NO FD
-    if (lseek(BUFF_FD, 0, SEEK_CUR) != BUFF_SIZE)
-        fatal_group("BUFFER FD OFFSET WAS CHANGED");
-
-    // TODO: FIXME: wait() non blocking, e limpa todos
-
-    // TELL ALL WORKERS TO TERMINATE
-    // NOTE: VAI MANDAR PARA SI MESMO TAMBÉM
-    dbg("SENDING SIGTERM TO ALL WORKERS");
-
-    kill(0, SIGTERM);
-
-    // WAIT ALL SUBPROCESSES TO TERMINATE
-    // WE WILL TIMEOUT BECAUSE OF THE TIMER
-    // SEND SIGALRM TO THE DAEMON TO EXIT FASTER
-
-    if (main_wait_workers()) { // IF STILL NOT, DON'T WAIT ANYMORE: KILL THEM ALL
-        if (main_wait_workers()) { Worker* worker = workers;
-            do {
-                if (worker->pid) {
-                    dbg("KILLING WORKER %u WITH PID %llu", worker->id, (uintll)worker->pid);
-                    kill((pid_t)worker->pid, SIGKILL);
-                }
-            } while (++worker != WORKERS_LMT);
-            // TODO: FIXME: THIS ONE MUST BE NON BLOCKING
-            if (main_wait_workers())
-                fatal_group("KILLING PROCESS GROUP");
+        while (last) {
+            if (dedipy_test_random(c) % 8 == 0)
+                last = dedipy_realloc(last, sizeof(void**) + dedipy_test_size(c)) ?: last;
+            void** old = *last;
+            dedipy_free(last);
+            last = old;
         }
     }
 
-    dbg("EXITING SUCESSFULLY");
-
-    return 0;
+    dedipy_dbg("TEST 1 - DONE");
 }
 
-// COMO LIMPAR UM PIPE:
-// é modo packet
-// write("FIM:COOKIE")
-//  while(read() != "FIM:COOKIE");
-// =]
+// TODO: FIXME: ALOCAR SIMULTANEAMENTE O MAXIMO POSSIVEL
+//      -> quando este blockSize der malloc() null, ir reduzindo ele aqté que nem mesmo size 1 possa ser alocado
+// si depois, partir para um novo block size
+static void dedipy_test_2 (void) {
 
+    dedipy_dbg("TEST 2");
 
+    u64 blockSize = 64*1024; // >= sizeof(void**)
 
-// TODO: FIXME: for NUMA systems, it's better to test CPU<->memory regions, on start
-// then we only set first cpu0 for the first worker
+    do { u64 count = 0; void** last = NULL; void** this;
+
+        while ((this = dedipy_malloc(blockSize))) {
+            *this = last;
+            last = this;
+            count += 1;
+        }
+
+        while (last) {
+            this = *last;
+            dedipy_free(last);
+            last = this;
+        }
+
+        if (count)
+            dedipy_dbg("TEST 2 - ALLOCATED %llu BLOCKS of %llu BYTES = %llu", (uintll)count, (uintll)blockSize, (uintll)(count * blockSize));
+
+    } while ((blockSize <<= 1));
+
+    dedipy_dbg("TEST 2 - DONE");
+}
+
+static void dedipy_test (void) {
+
+    dedipy_dbg("TEST");
+    // TODO: FIXME: tentar dar malloc() e realloc() com valores bem grandes, acima desses limies, e confirmar que deu NULL
+    // C_SIZE_MAX
+    // ROOTS_SIZES_LST
+    // ROOTS_SIZES_LMT
+    dedipy_test_0();
+    dedipy_test_1();
+    dedipy_test_2();
+
+    dedipy_dbg("TEST - DONE");
+}
+
+#endif
